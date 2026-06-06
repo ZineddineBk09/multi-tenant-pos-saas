@@ -1,0 +1,22 @@
+{
+  "name": "multi-tenant-pos",
+  "description": "Multi-tenant SaaS POS with Next.js Multi-Zones, Fastify API gateway, and PostgreSQL RLS",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "db:generate": "pnpm --filter @pos/database db:generate",
+    "db:migrate": "pnpm --filter @pos/database db:migrate",
+    "db:seed": "pnpm --filter @pos/database db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
