@@ -1,4 +1,4 @@
-{
+"packageManager": "pnpm@9.0.0"
   "name": "multi-tenant-pos",
   "description": "Multi-tenant SaaS POS with Next.js Multi-Zones, Fastify API gateway, and PostgreSQL RLS",
   "private": true,
