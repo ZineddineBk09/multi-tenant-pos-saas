@@ -363,7 +363,7 @@ export default function InventoryPage() {
                 </td>
               </tr>
             ) : (
-              filteredProducts.main ? filteredProducts : filteredProducts.map((product) => (
+              filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{product.sku}</td>
                   <td className="px-4 py-3 font-semibold text-slate-900">{product.name}</td>
