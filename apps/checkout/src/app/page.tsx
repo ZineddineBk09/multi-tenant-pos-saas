@@ -39,6 +39,16 @@ export default function CheckoutPage() {
   // Dynamic Invoice Number state
   const [invoiceNo, setInvoiceNo] = useState("local-17");
 
+  // Receipt Modal State
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [completedOrderData, setCompletedOrderData] = useState<{
+    invoice: string;
+    items: CartItem[];
+    subtotal: number;
+    discountAmt: number;
+    grandTotal: number;
+  } | null>(null);
+
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
@@ -48,14 +58,12 @@ export default function CheckoutPage() {
     }
     loadProducts();
 
-    // Initialize random/sequential invoice number from localStorage if available
     const lastInv = localStorage.getItem("pos_last_invoice_num");
     if (lastInv) {
       const nextNum = parseInt(lastInv, 10) + 1;
       setInvoiceNo(`local-${nextNum}`);
     }
 
-    // Cleanup camera scanner on unmount
     return () => {
       if (scannerRef.current) {
         scannerRef.current.clear().catch(() => {});
@@ -74,7 +82,6 @@ export default function CheckoutPage() {
     }
   }
 
-  // Core function to process scanned or entered barcode instantly
   function processBarcode(code: string) {
     const cleanCode = code.trim();
     if (!cleanCode) return;
@@ -155,7 +162,6 @@ export default function CheckoutPage() {
     setCart((prev) => prev.filter((item) => item.sku !== sku));
   }
 
-  // Toggle Live Camera Scanner for iPhone / Mobile
   function toggleCameraScanner() {
     if (scannerActive) {
       if (scannerRef.current) {
@@ -200,16 +206,22 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await new Promise((resolve) => setTimeout(resolve, 400));
       
-      // Increment and save new invoice number
+      setCompletedOrderData({
+        invoice: invoiceNo,
+        items: [...cart],
+        subtotal,
+        discountAmt: discountAmount,
+        grandTotal,
+      });
+      setShowReceiptModal(true);
+
       const currentNumStr = invoiceNo.replace("local-", "");
       const nextNum = (parseInt(currentNumStr, 10) || 17) + 1;
       const nextInvoice = `local-${nextNum}`;
       localStorage.setItem("pos_last_invoice_num", nextNum.toString());
 
-      alert(`Checkout completed successfully! Invoice #${invoiceNo} generated.`);
-      
       setCart([]);
       setDiscount(0);
       setInvoiceNo(nextInvoice);
@@ -254,7 +266,6 @@ export default function CheckoutPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left / Main Section */}
         <div className="lg:col-span-2 space-y-4">
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -269,7 +280,6 @@ export default function CheckoutPage() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Camera Container for html5-qrcode */}
               {scannerActive && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                   <div id="reader" className="w-full"></div>
@@ -330,7 +340,6 @@ export default function CheckoutPage() {
             </CardContent>
           </Card>
 
-          {/* Cart Table */}
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg">Current Bill Items</CardTitle>
@@ -360,7 +369,7 @@ export default function CheckoutPage() {
                           <td className="px-3 py-2">
                             <div className="font-semibold text-slate-900">{item.name}</div>
                             <div className="text-xs text-slate-500 font-mono">
-                              {item.name} x {item.qty} - Rs {item.price * item.qty}
+                              {item.name} — Rs {item.price} × {item.qty} = Rs {item.price * item.qty}
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right">Rs {item.price}</td>
@@ -400,7 +409,6 @@ export default function CheckoutPage() {
           </Card>
         </div>
 
-        {/* Right Section: Bill Summary */}
         <div className="space-y-4">
           <Card className="border-slate-200 shadow-sm bg-slate-50">
             <CardHeader>
@@ -447,6 +455,80 @@ export default function CheckoutPage() {
           </Card>
         </div>
       </div>
+
+      {/* Professional Receipt Modal matching screenshot invoice layout */}
+      {showReceiptModal && completedOrderData && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 font-mono text-sm">
+            <div className="text-center space-y-1 border-b pb-3">
+              <h2 className="font-bold text-lg text-slate-900">Imdad Cosmetics</h2>
+              <p className="text-xs text-slate-600">Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi</p>
+              <p className="text-xs text-slate-600">Ph: 03451523394</p>
+            </div>
+
+            <div className="flex justify-between text-xs text-slate-500 border-b pb-2">
+              <span>INVOICE NO: #{completedOrderData.invoice}</span>
+              <span>DATE: {new Date().toLocaleDateString()}</span>
+            </div>
+
+            {/* Table Header matching invoice style */}
+            <div className="grid grid-cols-12 text-xs font-bold text-slate-700 border-b pb-1">
+              <span className="col-span-6">PRODUCT DESCRIPTION</span>
+              <span className="col-span-2 text-right">PRICE</span>
+              <span className="col-span-2 text-center">QTY</span>
+              <span className="col-span-2 text-right">TOTAL</span>
+            </div>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto py-1">
+              {completedOrderData.items.map((item, idx) => (
+                <div key={idx} className="grid grid-cols-12 text-xs items-center py-1 border-b border-slate-100">
+                  <span className="col-span-6 font-semibold">{item.name}</span>
+                  <span className="col-span-2 text-right">{item.price}</span>
+                  <span className="col-span-2 text-center">{item.qty}</span>
+                  <span className="col-span-2 text-right font-bold">{(item.price * item.qty).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t pt-3 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span>SUBTOTAL:</span>
+                <span>Rs {completedOrderData.subtotal.toFixed(2)}</span>
+              </div>
+              {completedOrderData.discountAmt > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>DISCOUNT:</span>
+                  <span>- Rs {completedOrderData.discountAmt.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-bold text-slate-900 border-t pt-2">
+                <span>TOTAL PRICE:</span>
+                <span className="text-blue-600">Rs {completedOrderData.grandTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="text-center text-xs text-slate-500 border-t pt-3">
+              Thank you for shopping with us!
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={() => window.print()}
+                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                🖨 Print Receipt
+              </Button>
+              <Button
+                onClick={() => setShowReceiptModal(false)}
+                variant="outline"
+                className="flex-1 border-slate-300 text-slate-700"
+              >
+                Close / New Sale
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
