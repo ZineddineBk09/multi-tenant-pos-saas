@@ -31,11 +31,14 @@ export default function UniversalPOS() {
   const [price, setPrice] = useState<string>('');
   const [billItems, setBillItems] = useState<BillItem[]>([]);
 
+  // Dynamic Invoice Number state
+  const [invoiceNo, setInvoiceNo] = useState<string>('local-17');
+
   // Store Profiles Data
   const storeProfiles: Record<string, StoreProfile> = {
     'imdad-cosmetics': {
       name: 'Imdad Cosmetics',
-      details: 'Shop # B1-A, Kamil Plaza, Basement Sara Bazar, Rawalpindi | Ph: 0340-5950563',
+      details: 'Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi | Ph: 0340-5950563',
     },
     'style350': {
       name: 'Style 350',
@@ -47,9 +50,15 @@ export default function UniversalPOS() {
     const currentTenant = process.env.NEXT_PUBLIC_TENANT_ID || 'imdad-cosmetics';
     setTenantId(currentTenant);
     setStoreInfo(storeProfiles[currentTenant as keyof typeof storeProfiles] || { name: 'Universal POS Store', details: 'Rawalpindi' });
+
+    // Initialize sequential invoice number
+    const lastInv = localStorage.getItem('pos_last_invoice_num');
+    if (lastInv) {
+      const nextNum = parseInt(lastInv, 10) + 1;
+      setInvoiceNo(`local-${nextNum}`);
+    }
   }, []);
 
-  // Handle Bulk CSV Import for existing inventory
   const handleCSVImport = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -57,7 +66,6 @@ export default function UniversalPOS() {
     }
   };
 
-  // Add Item to Bill with Auto Barcode Generation
   const handleAddItem = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!price) {
@@ -67,14 +75,15 @@ export default function UniversalPOS() {
 
     const finalBarcode = barcode.trim() !== '' ? barcode : `AUTO-${Math.floor(100000 + Math.random() * 900000)}`;
     const finalName = itemName.trim() !== '' ? itemName : `Product (${finalBarcode})`;
+    const priceNum = parseFloat(price) || 0;
 
     const newItem: BillItem = {
       id: Date.now(),
       barcode: finalBarcode,
       name: finalName,
       qty: 1,
-      price: parseFloat(price),
-      total: parseFloat(price),
+      price: priceNum,
+      total: priceNum * 1,
     };
 
     setBillItems([...billItems, newItem]);
@@ -83,7 +92,24 @@ export default function UniversalPOS() {
     setPrice('');
   };
 
-  const grandTotal = billItems.reduce((acc, item) => acc + item.total, 0);
+  const subtotal = billItems.reduce((acc, item) => acc + item.total, 0);
+  const grandTotal = Math.max(0, subtotal);
+
+  const handleCompleteCheckout = () => {
+    if (billItems.length === 0) {
+      alert('بل میں کوئی آئٹم موجود نہیں ہے!');
+      return;
+    }
+
+    const currentNumStr = invoiceNo.replace('local-', '');
+    const nextNum = (parseInt(currentNumStr, 10) || 17) + 1;
+    const nextInvoice = `local-${nextNum}`;
+    localStorage.setItem('pos_last_invoice_num', nextNum.toString());
+
+    alert(`آرڈر مکمل ہو گیا ہے! انوائس #${invoiceNo} جنریٹ ہو گئی ہے۔`);
+    setInvoiceNo(nextInvoice);
+    setBillItems([]);
+  };
 
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '900px', margin: '0 auto' }}>
@@ -91,6 +117,7 @@ export default function UniversalPOS() {
       <div style={{ borderBottom: '2px solid #333', paddingBottom: '10px', marginBottom: '20px' }}>
         <h1 style={{ margin: '0 0 5px 0', color: '#1a1a1a' }}>{storeInfo.name}</h1>
         <p style={{ margin: 0, color: '#666', fontSize: '14px' }}><b>{storeInfo.details}</b></p>
+        <p style={{ margin: '5px 0 0 0', color: '#007bff', fontSize: '14px' }}><b>Invoice No: #{invoiceNo}</b></p>
       </div>
 
       {/* Bulk CSV Import Section */}
@@ -165,8 +192,8 @@ export default function UniversalPOS() {
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
         <thead>
           <tr style={{ background: '#007bff', color: '#fff', textAlign: 'left' }}>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Barcode / Code</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Item Name</th>
+            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Code / Barcode</th>
+            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Product Description</th>
             <th style={{ padding: '10px', border: '1px solid #ddd' }}>Qty</th>
             <th style={{ padding: '10px', border: '1px solid #ddd' }}>Price (Rs)</th>
             <th style={{ padding: '10px', border: '1px solid #ddd' }}>Total</th>
@@ -183,10 +210,13 @@ export default function UniversalPOS() {
             billItems.map((item) => (
               <tr key={item.id}>
                 <td style={{ padding: '8px', border: '1px solid #ddd', fontFamily: 'monospace' }}>{item.barcode}</td>
-                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.name}</td>
-                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.qty}</td>
-                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.price}</td>
-                <td style={{ padding: '8px', border: '1px solid #ddd' }}>{item.total}</td>
+                <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                  <b>{item.name}</b>
+                  <div style={{ fontSize: '12px', color: '#666' }}>{item.name} {item.price} x {item.qty}</div>
+                </td>
+                <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>{item.qty}</td>
+                <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'right' }}>Rs {item.price.toFixed(2)}</td>
+                <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'right', fontWeight: 'bold' }}>Rs {item.total.toFixed(2)}</td>
               </tr>
             ))
           )}
@@ -201,8 +231,25 @@ export default function UniversalPOS() {
             <p style={{ margin: 0 }}><b>Address:</b> {customerAddress || 'N/A'}</p>
           </div>
         ) : null}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>Total Amount: <span style={{ color: '#28a745' }}>Rs. {grandTotal}</span></h3>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+            <span>Subtotal:</span>
+            <span>Rs. {subtotal.toFixed(2)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 'bold', borderTop: '1px solid #ddd', paddingTop: '8px' }}>
+            <span>Grand Total:</span>
+            <span style={{ color: '#28a745' }}>Rs. {grandTotal.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+          <button
+            onClick={handleCompleteCheckout}
+            style={{ flex: 1, padding: '12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+          >
+            ✔ Complete Checkout & Next Invoice
+          </button>
           <button
             onClick={() => window.print()}
             style={{ padding: '12px 25px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
