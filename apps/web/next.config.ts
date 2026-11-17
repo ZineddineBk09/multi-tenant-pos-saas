@@ -1,30 +1,11 @@
-import type { NextConfig } from "next";
+const raw = process.env.INVENTORY_URL || "https://posinventory-production-c8002ad4.up.railway.app";
+const INVENTORY_URL = (/^https?:\/\//.test(raw) ? raw : `https://${raw}`).replace(/\/$/, "");
 
-const inventoryUrl = process.env.INVENTORY_URL ?? "http://localhost:3001";
-const checkoutUrl = process.env.CHECKOUT_URL ?? "http://localhost:3002";
-
-const nextConfig: NextConfig = {
-  transpilePackages: ["@pos/ui", "@pos/api-client"],
+module.exports = {
   async rewrites() {
     return [
-      {
-        source: "/inventory",
-        destination: `${inventoryUrl}/inventory`,
-      },
-      {
-        source: "/inventory/:path*",
-        destination: `${inventoryUrl}/inventory/:path*`,
-      },
-      {
-        source: "/checkout",
-        destination: `${checkoutUrl}/checkout`,
-      },
-      {
-        source: "/checkout/:path*",
-        destination: `${checkoutUrl}/checkout/:path*`,
-      },
+      { source: "/inventory", destination: `${INVENTORY_URL}/inventory` },
+      { source: "/inventory/:path*", destination: `${INVENTORY_URL}/inventory/:path*` },
     ];
   },
 };
-
-export default nextConfig;
