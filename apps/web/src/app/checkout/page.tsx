@@ -27,6 +27,26 @@ interface StoreProfile {
   phone: string;
 }
 
+const INVOICE_KEY = "pos:nextInvoiceNo";
+const INVOICE_SEED = 17;
+
+function readNextInvoice(): number {
+  try {
+    const n = Number(localStorage.getItem(INVOICE_KEY));
+    return Number.isInteger(n) && n >= INVOICE_SEED ? n : INVOICE_SEED;
+  } catch {
+    return INVOICE_SEED;
+  }
+}
+
+function consumeInvoice(): string {
+  const current = readNextInvoice();
+  try {
+    localStorage.setItem(INVOICE_KEY, String(current + 1));
+  } catch {}
+  return `local-${current}`;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
@@ -40,6 +60,8 @@ export default function CheckoutPage() {
   const [receipt, setReceipt] = useState<Order | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("local-17");
+  const [attendantName, setAttendantName] = useState("Nasir Farooq");
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -53,31 +75,13 @@ export default function CheckoutPage() {
     phone: "03451523394",
   });
 
-  const storeProfiles: Record<string, StoreProfile> = {
-    "imdad-cosmetics": {
-      name: "Imdad Cosmetics",
-      details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-      phone: "03451523394",
-    },
-  };
-
   useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
     }
     loadProducts();
-  }, []);
-
-  useEffect(() => {
-    const currentTenant = process.env.NEXT_PUBLIC_TENANT_ID || "imdad-cosmetics";
-    setStoreInfo(
-      storeProfiles[currentTenant as keyof typeof storeProfiles] || {
-        name: "Imdad Cosmetics",
-        details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-        phone: "03451523394",
-      }
-    );
+    setInvoiceNo(`local-${readNextInvoice()}`);
   }, []);
 
   useEffect(() => {
@@ -97,7 +101,6 @@ export default function CheckoutPage() {
     }
   }
 
-  // 🎤 Voice Search / Mic Feature for Item Name Box
   function startVoiceSearch() {
     // @ts-expect-error window.webkitSpeechRecognition support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -113,7 +116,7 @@ export default function CheckoutPage() {
 
     recognition.onstart = () => {
       setIsListening(true);
-      setError("🎤 Listening... Speak item name (e.g. Pantene Shampoo, Lipstick)");
+      setError("🎤 Listening... Speak item name");
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -167,7 +170,7 @@ export default function CheckoutPage() {
 
   async function detectBarcodeLoop() {
     if (!("BarcodeDetector" in window)) {
-      setError("Live camera BarcodeDetector not supported in this browser; please use handheld scanner.");
+      setError("Live camera BarcodeDetector not supported in this browser.");
       return;
     }
 
@@ -197,13 +200,11 @@ export default function CheckoutPage() {
     requestAnimationFrame(scanFrame);
   }
 
-  // CORE LOGIC: When Barcode is scanned, auto-fill Barcode AND Auto-fill Item Name from DB!
   function handleBarcodeScanned(code: string) {
     const trimmed = code.trim();
     if (!trimmed) return;
     setBarcodeInput(trimmed);
 
-    // Search in loaded products list
     const found = products.find(
       (p) => (p.sku && p.sku.toLowerCase() === trimmed.toLowerCase()) || p.id === trimmed
     );
@@ -213,19 +214,12 @@ export default function CheckoutPage() {
       setPriceInput(found.price || "");
       setError(`⚡ Auto-matched: ${found.name}`);
     } else {
-      // If not in database, auto-generate a clean item name based on code
       setItemNameInput(`Item-${trimmed}`);
       setPriceInput("");
       setError(`⚡ New Barcode. Name auto-filled, adjust price if needed.`);
     }
   }
 
-  function handleBarcodeSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    handleBarcodeScanned(barcodeInput);
-  }
-
-  // + Add & Save Button Logic (Saves permanently to Inventory DB & Adds to Cart)
   async function handleAddAndSave(e: React.FormEvent) {
     e.preventDefault();
     const sku = barcodeInput.trim() || `SKU-${Date.now().toString().slice(-6)}`;
@@ -272,7 +266,6 @@ export default function CheckoutPage() {
       addToCart(targetProduct, qty);
       setError(`Item successfully saved to inventory & added to cart!`);
       
-      // Clear inputs for next scan
       setBarcodeInput("");
       setItemNameInput("");
       setQtyInput("1");
@@ -344,29 +337,9 @@ export default function CheckoutPage() {
     setError("");
 
     try {
-      const orderPayload = {
-        items: cart.map((item) => ({
-          productId: item.product.id.startsWith("custom-") ? undefined : item.product.id,
-          quantity: item.quantity,
-        })),
-      };
-
-      const order = await apiFetch<Order>("/orders", {
-        method: "POST",
-        body: JSON.stringify(orderPayload),
-      });
-
-      if (order && order.id) {
-        setReceipt(order);
-        setCart([]);
-        setDiscountAmount("");
-      } else {
-        throw new Error("Invalid response");
-      }
-    } catch {
-      // Fallback local receipt generation so checkout never gets stuck for the user!
+      const issuedInvoice = consumeInvoice();
       const fallbackOrder: Order = {
-        id: `local-${Date.now()}`,
+        id: issuedInvoice,
         subtotal: subtotal.toFixed(2),
         total: total.toFixed(2),
         items: cart.map((item, idx) => ({
@@ -380,7 +353,9 @@ export default function CheckoutPage() {
       setReceipt(fallbackOrder);
       setCart([]);
       setDiscountAmount("");
-      setError("⚡ Sale completed successfully!");
+      setInvoiceNo(`local-${readNextInvoice()}`);
+    } catch {
+      setError("Checkout failed. Please try again.");
     } finally {
       setProcessing(false);
     }
@@ -391,7 +366,7 @@ export default function CheckoutPage() {
     
     let itemsText = "";
     receipt.items?.forEach((item, index) => {
-      itemsText += `${index + 1}. ${item.productName} x ${item.quantity} - Rs ${(parseFloat(item.unitPrice) * item.quantity).toFixed(2)}\n`;
+      itemsText += `${index + 1}. ${item.productName} (${item.unitPrice} x ${item.quantity}) - Rs ${(parseFloat(item.unitPrice) * item.quantity).toFixed(2)}\n`;
     });
 
     const message = 
@@ -399,14 +374,14 @@ export default function CheckoutPage() {
       `${storeInfo.details}\n` +
       `Ph: ${storeInfo.phone}\n` +
       `--------------------------------\n` +
-      `*Order Receipt #${receipt.id.slice(0, 8)}*\n\n` +
+      `*Order Receipt #${receipt.id}* (Attendant: ${attendantName})\n\n` +
       `${itemsText}\n` +
       `--------------------------------\n` +
       `Subtotal: Rs ${receipt.subtotal}\n` +
       (discountVal > 0 ? `Discount: -Rs ${discountVal}\n` : "") +
       `*Grand Total: Rs ${total}*\n` +
       `--------------------------------\n` +
-      `Thank you for shopping with us!`;
+      `Thank you for shopping with us! (Admin: ${storeInfo.phone})`;
 
     const encodedMessage = encodeURIComponent(message);
     let url = `https://wa.me/?text=${encodedMessage}`;
@@ -434,14 +409,17 @@ export default function CheckoutPage() {
                 <p className="text-xs text-slate-600">{storeInfo.details}</p>
                 <p className="text-xs text-slate-600">Ph: {storeInfo.phone}</p>
               </div>
-              <p className="text-sm text-slate-500">Order #{receipt.id.slice(0, 8)}</p>
+              <div className="flex justify-between text-sm text-slate-500">
+                <span>Order #{receipt.id}</span>
+                <span>Attendant: {attendantName}</span>
+              </div>
               <div className="divide-y divide-slate-100">
                 {receipt.items?.map((item) => (
-                  <div key={item.id} className="flex justify-between py-2 text-sm">
+                  <div key={item.id} className="flex justify-between py-2 text-sm font-mono">
                     <span>
-                      {item.productName} × {item.quantity}
+                      {item.productName} {item.unitPrice} x {item.quantity}
                     </span>
-                    <span>Rs {(parseFloat(item.unitPrice) * item.quantity).toFixed(2)}</span>
+                    <span className="font-bold">Rs {(parseFloat(item.unitPrice) * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -458,7 +436,7 @@ export default function CheckoutPage() {
                 )}
                 <div className="flex justify-between text-lg font-bold">
                   <span>Grand Total</span>
-                  <span>Rs {total}</span>
+                  <span className="text-blue-600">Rs {total}</span>
                 </div>
               </div>
 
@@ -469,17 +447,17 @@ export default function CheckoutPage() {
                   onChange={(e) => setCustomerPhone(e.target.value)}
                 />
                 <Button
-                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
                   onClick={() => sendWhatsAppReceipt(customerPhone)}
                 >
                   💬 Send Receipt to Customer WhatsApp
                 </Button>
                 <Button
                   variant="outline"
-                  className="w-full border-green-600 text-green-700 hover:bg-green-50"
+                  className="w-full border-green-600 text-green-700 hover:bg-green-50 font-bold"
                   onClick={() => sendWhatsAppReceipt(storeInfo.phone)}
                 >
-                  📱 Send Copy to Store Owner
+                  📱 Send Copy to Store Owner ({storeInfo.phone})
                 </Button>
               </div>
 
@@ -510,17 +488,26 @@ export default function CheckoutPage() {
         </nav>
       }
     >
-      <div className="mb-4 border-b border-slate-200 pb-3">
-        <h1 className="text-2xl font-bold text-slate-900">{storeInfo.name}</h1>
-        <p className="text-sm text-slate-700 font-medium">{storeInfo.details} | Ph: {storeInfo.phone}</p>
+      <div className="mb-4 border-b border-slate-200 pb-3 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{storeInfo.name}</h1>
+          <p className="text-sm text-slate-700 font-medium">{storeInfo.details} | Ph: {storeInfo.phone}</p>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span>Attendant:</span>
+          <input
+            type="text"
+            value={attendantName}
+            onChange={(e) => setAttendantName(e.target.value)}
+            className="px-2 py-1 border border-slate-300 rounded text-sm w-32 font-semibold"
+          />
+        </div>
       </div>
 
-      <PageHeader title="Checkout Terminal" description="Scan Barcode (Auto-Fills Name & Saves to Inventory) 📦" />
+      <PageHeader title={`Checkout Terminal (${invoiceNo})`} description="Scan Barcode (Auto-Fills Name & Saves to Inventory) 📦" />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
-          
-          {/* Top Barcode & Scan/Find Form */}
           <div className="flex flex-wrap gap-2">
             <Input
               ref={barcodeInputRef}
@@ -567,7 +554,6 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* Item Name (Auto-Filled on Scan OR Voice Spoken), Qty, Price, + Add & Save */}
           <form onSubmit={handleAddAndSave} className="space-y-3 p-4 rounded-xl border border-slate-200 bg-slate-50">
             <div className="relative flex items-center">
               <Input
@@ -616,7 +602,6 @@ export default function CheckoutPage() {
 
           {error && <p className="text-sm text-blue-600 font-medium bg-blue-50 p-2 rounded">{error}</p>}
 
-          {/* Cart Table */}
           <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm text-left">
               <thead className="bg-blue-600 text-white text-xs uppercase">
@@ -692,7 +677,7 @@ export default function CheckoutPage() {
         <div>
           <Card>
             <CardHeader>
-              <CardTitle>Bill Summary ({cart.length} Items)</CardTitle>
+              <CardTitle>Bill Summary ({invoiceNo})</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2 text-sm">
@@ -714,17 +699,17 @@ export default function CheckoutPage() {
 
                 <div className="flex justify-between border-t pt-2 text-lg font-bold">
                   <span>Grand Total</span>
-                  <span>Rs {total.toFixed(2)}</span>
+                  <span className="text-blue-600">Rs {total.toFixed(2)}</span>
                 </div>
               </div>
 
               <Button
                 size="lg"
-                className="w-full"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold"
                 onClick={completeSale}
                 disabled={processing || cart.length === 0}
               >
-                {processing ? "Processing..." : "Complete Sale"}
+                {processing ? "Processing..." : "Complete Sale & Print"}
               </Button>
             </CardContent>
           </Card>
