@@ -36,6 +36,9 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
   
+  // Dynamic Invoice Number state
+  const [invoiceNo, setInvoiceNo] = useState("local-17");
+
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
@@ -44,6 +47,13 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
+
+    // Initialize random/sequential invoice number from localStorage if available
+    const lastInv = localStorage.getItem("pos_last_invoice_num");
+    if (lastInv) {
+      const nextNum = parseInt(lastInv, 10) + 1;
+      setInvoiceNo(`local-${nextNum}`);
+    }
 
     // Cleanup camera scanner on unmount
     return () => {
@@ -191,9 +201,18 @@ export default function CheckoutPage() {
     setLoading(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 600));
-      alert("Checkout completed successfully!");
+      
+      // Increment and save new invoice number
+      const currentNumStr = invoiceNo.replace("local-", "");
+      const nextNum = (parseInt(currentNumStr, 10) || 17) + 1;
+      const nextInvoice = `local-${nextNum}`;
+      localStorage.setItem("pos_last_invoice_num", nextNum.toString());
+
+      alert(`Checkout completed successfully! Invoice #${invoiceNo} generated.`);
+      
       setCart([]);
       setDiscount(0);
+      setInvoiceNo(nextInvoice);
     } catch (err) {
       alert("Checkout failed. Please try again.");
     } finally {
@@ -221,7 +240,9 @@ export default function CheckoutPage() {
       <div className="mb-4 border-b border-slate-200 pb-3 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Checkout Terminal</h1>
-          <p className="text-sm text-slate-600">Scan barcode instantly for Imdad Cosmetics</p>
+          <p className="text-sm text-slate-600">
+            Imdad Cosmetics — Invoice: <span className="font-mono font-bold text-blue-600">{invoiceNo}</span>
+          </p>
         </div>
         <Button
           onClick={() => router.push("/inventory")}
@@ -339,7 +360,7 @@ export default function CheckoutPage() {
                           <td className="px-3 py-2">
                             <div className="font-semibold text-slate-900">{item.name}</div>
                             <div className="text-xs text-slate-500 font-mono">
-                              Rs {item.price} × {item.qty}
+                              {item.name} x {item.qty} - Rs {item.price * item.qty}
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right">Rs {item.price}</td>
@@ -383,12 +404,12 @@ export default function CheckoutPage() {
         <div className="space-y-4">
           <Card className="border-slate-200 shadow-sm bg-slate-50">
             <CardHeader>
-              <CardTitle className="text-lg">Bill Summary</CardTitle>
+              <CardTitle className="text-lg">Bill Summary ({invoiceNo})</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between text-sm text-slate-600">
                 <span>Subtotal</span>
-                <span className="font-semibold text-slate-900">Rs {subtotal}</span>
+                <span className="font-semibold text-slate-900">Rs {subtotal.toFixed(2)}</span>
               </div>
 
               <div className="flex items-center justify-between text-sm text-slate-600">
