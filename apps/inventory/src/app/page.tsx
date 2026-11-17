@@ -29,7 +29,6 @@ export default function InventoryPage() {
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // New Product Form State
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
@@ -85,7 +84,6 @@ export default function InventoryPage() {
     }
   }
 
-  // Add Single Product
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) {
@@ -118,7 +116,6 @@ export default function InventoryPage() {
     }
   }
 
-  // Handle Bulk CSV Import (Copy-Paste or Excel Import)
   const handleCSVImport = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -228,7 +225,6 @@ export default function InventoryPage() {
         description="Products, barcodes, and stock levels saved securely on server"
       />
 
-      {/* Bulk Import Section */}
       <div className="bg-slate-50 border border-dashed border-slate-300 p-4 rounded-xl mb-6">
         <label className="font-bold block mb-1 text-slate-800 text-sm">
           📁 پرانا ڈیٹا یا کسٹمر/پروڈکٹ لسٹ امپورٹ کریں (Bulk CSV File Import):
@@ -238,7 +234,6 @@ export default function InventoryPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3 mb-6">
-        {/* Add Product Form */}
         <Card className="lg:col-span-1 border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg">➕ Add New Product</CardTitle>
@@ -276,7 +271,6 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
 
-        {/* Search & Actions */}
         <Card className="lg:col-span-2 border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg">Search & Manage Inventory</CardTitle>
