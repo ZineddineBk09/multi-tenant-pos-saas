@@ -87,7 +87,7 @@ export default function InventoryPage() {
       return;
     }
     try {
-      const newProduct = await apiFetch<Product>("/products", {
+      const response = await apiFetch<Product | { data: Product }>("/products", {
         method: "POST",
         body: JSON.stringify({
           name: name.trim(),
@@ -96,12 +96,18 @@ export default function InventoryPage() {
           stockQty: parseInt(stockQty, 10) || 100,
         }),
       });
-      if (newProduct) {
-        setProducts((prev) => [newProduct, ...prev]);
+
+      const createdProduct =
+        response && typeof response === "object" && "data" in response
+          ? (response as { data: Product }).data
+          : (response as Product);
+
+      if (createdProduct) {
         setName("");
         setSku("");
         setPrice("");
         setStockQty("100");
+        await loadProducts();
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
       }
     } catch (err) {
@@ -357,7 +363,7 @@ export default function InventoryPage() {
                 </td>
               </tr>
             ) : (
-              filteredProducts.map((product) => (
+              filteredProducts.main ? filteredProducts : filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{product.sku}</td>
                   <td className="px-4 py-3 font-semibold text-slate-900">{product.name}</td>
@@ -381,4 +387,3 @@ export default function InventoryPage() {
     </AppShell>
   );
 }
-
