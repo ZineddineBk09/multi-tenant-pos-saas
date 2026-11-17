@@ -56,7 +56,7 @@ export default function InventoryPage() {
 
     const currentTenant = process.env.NEXT_PUBLIC_TENANT_ID || "imdad-cosmetics";
     setStoreInfo(
-      storeProfiles[currentTenant as keyof typeof storeProfiles] || {
+      storeProfiles[currentTenant] ?? {
         name: "Imdad Cosmetics",
         details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
         phone: "03451523394",
@@ -98,7 +98,7 @@ export default function InventoryPage() {
           name: name.trim(),
           sku: sku.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
           price: price.trim(),
-          stockQty: parseInt(stockQty) || 100,
+          stockQty: parseInt(stockQty, 10) || 100,
         }),
       });
 
@@ -118,41 +118,58 @@ export default function InventoryPage() {
 
   const handleCSVImport = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const text = e.target?.result as string;
-        if (!text) return;
-        
-        const lines = text.split("\n");
-        let importedCount = 0;
+    if (!file) return;
 
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          const cols = line.split(",");
-          if (cols.length >= 2) {
-            const pName = cols[1]?.replace(/["']/g, "").trim() || "Imported Item";
-            const pSku = cols[0]?.replace(/["']/g, "").trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
-            const pPrice = cols[2]?.replace(/["']/g, "").trim() || "100";
-            const pStock = parseInt(cols[3]?.replace(/["']/g, "").trim()) || 50;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result;
+      if (typeof text !== "string") return;
 
-            try {
-              const saved = await apiFetch<Product>("/products", {
-                method: "POST",
-                body: JSON.stringify({ name: pName, sku: pSku, price: pPrice, stockQty: pStock }),
-              });
-              if (saved) {
-                importedCount++;
-              }
-            } catch {}
+      const lines = text.split("\n");
+      let importedCount = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const rawLine = lines[i];
+        if (rawLine === undefined) continue;
+
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const cols = line.split(",");
+        const [rawSku = "", rawName = "", rawPrice = "100", rawStock = "50"] = cols.map((c) =>
+          c.replace(/["']/g, "").trim()
+        );
+
+        if (!rawName) continue;
+
+        const pSku = rawSku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
+        const parsedPrice = Number(rawPrice);
+        const pPrice = !Number.isNaN(parsedPrice) && parsedPrice >= 0 ? String(parsedPrice) : "100";
+        const parsedStock = parseInt(rawStock, 10);
+        const pStock = !Number.isNaN(parsedStock) && parsedStock >= 0 ? parsedStock : 50;
+
+        try {
+          const saved = await apiFetch<Product>("/products", {
+            method: "POST",
+            body: JSON.stringify({
+              name: rawName,
+              sku: pSku,
+              price: pPrice,
+              stockQty: pStock,
+            }),
+          });
+          if (saved) {
+            importedCount++;
           }
+        } catch {
+          // Skip failed row and continue importing remaining items
         }
-        alert(`کامیابی کے ساتھ ${importedCount} پروڈکٹس امپورٹ ہو گئی ہیں!`);
-        loadProducts();
-      };
-      reader.readAsText(file);
-    }
+      }
+
+      alert(`کامیابی کے ساتھ ${importedCount} پروڈکٹس امپورٹ ہو گئی ہیں!`);
+      loadProducts();
+    };
+    reader.readAsText(file);
   };
 
   function exportToCSV() {
@@ -177,7 +194,10 @@ export default function InventoryPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `imdad_cosmetics_inventory_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      "download",
+      `imdad_cosmetics_inventory_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -210,7 +230,9 @@ export default function InventoryPage() {
       <div className="mb-4 border-b border-slate-200 pb-3 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{storeInfo.name}</h1>
-          <p className="text-sm text-slate-700 font-medium">{storeInfo.details} | Ph: {storeInfo.phone}</p>
+          <p className="text-sm text-slate-700 font-medium">
+            {storeInfo.details} | Ph: {storeInfo.phone}
+          </p>
         </div>
         <Button
           onClick={() => router.push("/checkout")}
@@ -229,7 +251,9 @@ export default function InventoryPage() {
         <label className="font-bold block mb-1 text-slate-800 text-sm">
           📁 پرانا ڈیٹا یا کسٹمر/پروڈکٹ لسٹ امپورٹ کریں (Bulk CSV File Import):
         </label>
-        <p className="text-xs text-slate-500 mb-2">اپنی CSV فائل یہاں سلیکٹ کریں تاکہ سارا پرانا ڈیٹا خود بخود سسٹم میں آ جائے:</p>
+        <p className="text-xs text-slate-500 mb-2">
+          اپنی CSV فائل یہاں سلیکٹ کریں تاکہ سارا پرانا ڈیٹا خود بخود سسٹم میں آ جائے:
+        </p>
         <input type="file" accept=".csv" onChange={handleCSVImport} className="text-sm" />
       </div>
 
@@ -264,7 +288,10 @@ export default function InventoryPage() {
                 value={stockQty}
                 onChange={(e) => setStockQty(e.target.value)}
               />
-              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white font-bold">
+              <Button
+                type="submit"
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
+              >
                 Save to Inventory
               </Button>
             </form>
@@ -301,7 +328,8 @@ export default function InventoryPage() {
             </div>
 
             <div className="text-xs text-slate-500">
-              Total Products in Database: <span className="font-bold text-slate-900">{products.length}</span>
+              Total Products in Database:{" "}
+              <span className="font-bold text-slate-900">{products.length}</span>
             </div>
           </CardContent>
         </Card>
@@ -310,7 +338,11 @@ export default function InventoryPage() {
       {error && (
         <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-4 flex justify-between items-center">
           <p className="text-sm font-medium">{error}</p>
-          <Button size="sm" onClick={loadProducts} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <Button
+            size="sm"
+            onClick={loadProducts}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
             Retry
           </Button>
         </div>
