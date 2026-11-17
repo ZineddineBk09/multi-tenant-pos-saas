@@ -23,6 +23,27 @@ interface CartItem {
   qty: number;
 }
 
+// Robust Invoice Helper Functions (LocalStorage synced)
+const INVOICE_KEY = "pos:nextInvoiceNo";
+const INVOICE_SEED = 17;
+
+function readNextInvoice(): number {
+  try {
+    const n = Number(localStorage.getItem(INVOICE_KEY));
+    return Number.isInteger(n) && n >= INVOICE_SEED ? n : INVOICE_SEED;
+  } catch {
+    return INVOICE_SEED;
+  }
+}
+
+function consumeInvoice(): string {
+  const current = readNextInvoice();
+  try {
+    localStorage.setItem(INVOICE_KEY, String(current + 1));
+  } catch {}
+  return `local-${current}`;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
@@ -58,11 +79,8 @@ export default function CheckoutPage() {
     }
     loadProducts();
 
-    const lastInv = localStorage.getItem("pos_last_invoice_num");
-    if (lastInv) {
-      const nextNum = parseInt(lastInv, 10) + 1;
-      setInvoiceNo(`local-${nextNum}`);
-    }
+    // Initialize upcoming invoice number from localStorage
+    setInvoiceNo(`local-${readNextInvoice()}`);
 
     return () => {
       if (scannerRef.current) {
@@ -195,8 +213,10 @@ export default function CheckoutPage() {
     }
   }
 
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const discountAmount = isNaN(discount) ? 0 : (subtotal * discount) / 100;
+  // Derived Grand Total calculation (prevents Rs 0 / NaN bugs)
+  const subtotal = cart.reduce((sum, item) => sum + Number(item.price) * Number(item.qty), 0);
+  const discountVal = Number(discount) || 0;
+  const discountAmount = (subtotal * discountVal) / 100;
   const grandTotal = Math.max(0, subtotal - discountAmount);
 
   async function handleCheckoutComplete() {
@@ -208,8 +228,11 @@ export default function CheckoutPage() {
     try {
       await new Promise((resolve) => setTimeout(resolve, 400));
       
+      // Consume & lock in invoice number
+      const issuedInvoice = consumeInvoice();
+
       setCompletedOrderData({
-        invoice: invoiceNo,
+        invoice: issuedInvoice,
         items: [...cart],
         subtotal,
         discountAmt: discountAmount,
@@ -217,14 +240,10 @@ export default function CheckoutPage() {
       });
       setShowReceiptModal(true);
 
-      const currentNumStr = invoiceNo.replace("local-", "");
-      const nextNum = (parseInt(currentNumStr, 10) || 17) + 1;
-      const nextInvoice = `local-${nextNum}`;
-      localStorage.setItem("pos_last_invoice_num", nextNum.toString());
-
+      // Reset cart and set up next upcoming invoice number
       setCart([]);
       setDiscount(0);
-      setInvoiceNo(nextInvoice);
+      setInvoiceNo(`local-${readNextInvoice()}`);
     } catch (err) {
       alert("Checkout failed. Please try again.");
     } finally {
