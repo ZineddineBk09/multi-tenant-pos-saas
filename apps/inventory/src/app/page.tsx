@@ -381,3 +381,4 @@ export default function InventoryPage() {
     </AppShell>
   );
 }
+"start": "next start -p ${PORT:-3001}"
