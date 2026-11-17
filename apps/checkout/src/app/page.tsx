@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@pos/api-client";
 import type { Product } from "@pos/types";
+import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   AppShell,
   Button,
@@ -12,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
   Input,
-  PageHeader,
 } from "@pos/ui";
 
 interface CartItem {
@@ -34,6 +34,9 @@ export default function CheckoutPage() {
   const [discount, setDiscount] = useState<number>(0);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [scannerActive, setScannerActive] = useState(false);
+  
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
     if (!getToken()) {
@@ -41,6 +44,13 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
+
+    // Cleanup camera scanner on unmount
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(() => {});
+      }
+    };
   }, []);
 
   async function loadProducts() {
@@ -54,34 +64,35 @@ export default function CheckoutPage() {
     }
   }
 
-  // Handle Barcode Scan / Enter
-  function handleBarcodeSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const code = barcodeInput.trim();
-    if (!code) return;
+  // Core function to process scanned or entered barcode instantly
+  function processBarcode(code: string) {
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
 
     setNotice("");
-    // Search in loaded inventory products by SKU or barcode
     const foundProduct = products.find(
-      (p) => p.sku?.toLowerCase() === code.toLowerCase() || p.id === code
+      (p) => p.sku?.toLowerCase() === cleanCode.toLowerCase() || p.id === cleanCode
     );
 
     if (foundProduct) {
-      // Auto-add to cart with inventory name and price
       addToCart({
         id: foundProduct.id,
         name: foundProduct.name,
-        sku: foundProduct.sku || code,
+        sku: foundProduct.sku || cleanCode,
         price: Number(foundProduct.price) || 0,
         qty: 1,
       });
       setBarcodeInput("");
+      setNotice(`✔ Added: ${foundProduct.name} (Rs ${foundProduct.price})`);
     } else {
-      // If not found in inventory, prefill barcode and prompt for name/price
-      setNotice(`Barcode (${code}) not found in inventory — enter Name & Price below or check SKU.`);
-      setCustomPrice("");
-      setCustomName("");
+      setBarcodeInput(cleanCode);
+      setNotice(`Barcode (${cleanCode}) not found in inventory — enter Name & Price below.`);
     }
+  }
+
+  function handleBarcodeSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    processBarcode(barcodeInput);
   }
 
   function addToCart(newItem: CartItem) {
@@ -96,7 +107,6 @@ export default function CheckoutPage() {
     });
   }
 
-  // Add custom or manual item
   function handleManualAdd() {
     if (!customName.trim() || !customPrice) return;
     const priceNum = parseFloat(customPrice);
@@ -135,6 +145,41 @@ export default function CheckoutPage() {
     setCart((prev) => prev.filter((item) => item.sku !== sku));
   }
 
+  // Toggle Live Camera Scanner for iPhone / Mobile
+  function toggleCameraScanner() {
+    if (scannerActive) {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(() => {});
+      }
+      setScannerActive(false);
+    } else {
+      setScannerActive(true);
+      setTimeout(() => {
+        try {
+          const scanner = new Html5QrcodeScanner(
+            "reader",
+            { fps: 10, qrbox: { width: 250, height: 150 } },
+            false
+          );
+          scannerRef.current = scanner;
+          scanner.render(
+            (decodedText) => {
+              processBarcode(decodedText);
+              // Optional: auto-close scanner after successful scan on mobile
+              scanner.clear().catch(() => {});
+              setScannerActive(false);
+            },
+            () => {}
+          );
+        } catch (err) {
+          console.error("Failed to start html5-qrcode scanner", err);
+          setNotice("Could not start camera scanner. Please use barcode gun or type.");
+          setScannerActive(false);
+        }
+      }, 100);
+    }
+  }
+
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const discountAmount = isNaN(discount) ? 0 : (subtotal * discount) / 100;
   const grandTotal = Math.max(0, subtotal - discountAmount);
@@ -146,7 +191,6 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     try {
-      // Simulate order completion / API call
       await new Promise((resolve) => setTimeout(resolve, 600));
       alert("Checkout completed successfully!");
       setCart([]);
@@ -178,7 +222,7 @@ export default function CheckoutPage() {
       <div className="mb-4 border-b border-slate-200 pb-3 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Checkout Terminal</h1>
-          <p className="text-sm text-slate-600">Scan QR/Barcode or lookup wholesale items</p>
+          <p className="text-sm text-slate-600">Scan barcode instantly for Imdad Cosmetics</p>
         </div>
         <Button
           onClick={() => router.push("/inventory")}
@@ -190,13 +234,28 @@ export default function CheckoutPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left / Main Section: Scanner & Manual Add */}
+        {/* Left / Main Section */}
         <div className="lg:col-span-2 space-y-4">
           <Card className="border-slate-200 shadow-sm">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Scan or Enter Barcode</CardTitle>
+              <Button
+                type="button"
+                onClick={toggleCameraScanner}
+                variant="outline"
+                className="text-xs bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              >
+                {scannerActive ? "Close Camera" : "📷 Open iPhone Camera Scanner"}
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Camera Container for html5-qrcode */}
+              {scannerActive && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div id="reader" className="w-full"></div>
+                </div>
+              )}
+
               <form onSubmit={handleBarcodeSubmit} className="flex gap-2">
                 <Input
                   placeholder="Scan Barcode / QR or type SKU..."
@@ -211,7 +270,7 @@ export default function CheckoutPage() {
               </form>
 
               {notice && (
-                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg font-medium">
+                <div className={`p-3 text-sm rounded-lg font-medium ${notice.startsWith("✔") ? "bg-green-50 border border-green-200 text-green-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
                   {notice}
                 </div>
               )}
@@ -259,7 +318,7 @@ export default function CheckoutPage() {
             <CardContent>
               {cart.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
-                  No items in cart yet. Scan a barcode or add an item above.
+                  No items in cart yet. Scan a barcode or use the camera scanner above.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -316,7 +375,7 @@ export default function CheckoutPage() {
           </Card>
         </div>
 
-        {/* Right Section: Bill Summary & Checkout */}
+        {/* Right Section: Bill Summary */}
         <div className="space-y-4">
           <Card className="border-slate-200 shadow-sm bg-slate-50">
             <CardHeader>
