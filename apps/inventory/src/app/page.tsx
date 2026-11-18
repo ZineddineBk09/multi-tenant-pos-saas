@@ -62,7 +62,6 @@ export default function InventoryPage() {
     loadProducts();
   }, []);
 
-  // Cache-busting parameter (?t=...) added so Next.js never serves stale cached inventory data
   async function loadProducts() {
     setLoading(true);
     setError("");
@@ -104,12 +103,23 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
+        // Immediately update local state so the 5th product appears instantly without waiting
+        setProducts((prev) => {
+          const exists = prev.findIndex((p) => p.id === createdProduct.id);
+          if (exists >= 0) {
+            return prev.map((p) => (p.id === createdProduct.id ? createdProduct : p));
+          }
+          return [createdProduct, ...prev];
+        });
+
         setName("");
         setSku("");
         setPrice("");
         setStockQty("100");
-        await loadProducts();
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
+        
+        // Also fetch from server to ensure full sync
+        loadProducts();
       }
     } catch (err) {
       console.error("Failed to add product", err);
@@ -328,63 +338,4 @@ export default function InventoryPage() {
         </Card>
       </div>
       {error && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-4 flex justify-between items-center">
-          <p className="text-sm font-medium">{error}</p>
-          <Button
-            size="sm"
-            onClick={loadProducts}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Retry
-          </Button>
-        </div>
-      )}
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-slate-100 text-slate-700 text-xs uppercase border-b border-slate-200">
-            <tr>
-              <th className="px-4 py-3">Barcode / SKU</th>
-              <th className="px-4 py-3">Item Name</th>
-              <th className="px-4 py-3 text-right">Price (Rs)</th>
-              <th className="px-4 py-3 text-center">Stock Qty</th>
-              <th className="px-4 py-3 text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {loading ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-500 font-medium">
-                  Loading inventory items... Please wait.
-                </td>
-              </tr>
-            ) : filteredProducts.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
-                  No products found in inventory. Add a new product or import CSV above.
-                </td>
-              </tr>
-            ) : (
-              filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{product.sku}</td>
-                  <td className="px-4 py-3 font-semibold text-slate-900">{product.name}</td>
-                  <td className="px-4 py-3 text-right font-medium">Rs {product.price}</td>
-                  <td className="px-4 py-3 text-center font-bold">{product.stockQty}</td>
-                  <td className="px-4 py-3 text-center">
-                    {product.stockQty > 5 ? (
-                      <Badge variant="success">In Stock</Badge>
-                    ) : product.stockQty > 0 ? (
-                      <Badge variant="warning">Low Stock</Badge>
-                    ) : (
-                      <Badge variant="destructive">Out of Stock</Badge>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </AppShell>
-  );
-}
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-4 flex justify-between
