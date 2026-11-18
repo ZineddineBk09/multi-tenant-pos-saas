@@ -7,7 +7,7 @@ import { runWithTenant } from "../middleware/tenant-context.js";
 const createProductSchema = z.object({
   name: z.string().min(1),
   sku: z.string().min(1),
-  price: z.string().regex(/^\d+(\.\d{1,2})?$/),
+  price: z.union([z.string(), z.number()]).transform((val) => String(val)),
   stockQty: z.number().int().min(0).default(0),
   lowStockThreshold: z.number().int().min(0).default(5),
   categoryId: z.string().uuid().nullable().optional(),
