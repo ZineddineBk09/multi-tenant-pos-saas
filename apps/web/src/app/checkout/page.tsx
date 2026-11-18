@@ -249,6 +249,7 @@ export default function CheckoutPage() {
     let targetProduct: Product | undefined;
 
     try {
+      // پروڈکٹ کو انوینٹری ڈیٹا بیس میں مستقل محفوظ کرنے کی ریکوئسٹ
       const response = await apiFetch<Product | { data: Product }>("/products", {
         method: "POST",
         body: JSON.stringify({
@@ -274,14 +275,10 @@ export default function CheckoutPage() {
           return [...prev, savedProduct];
         });
       }
-    } catch {
-      targetProduct = {
-        id: `custom-${Date.now()}`,
-        name,
-        sku,
-        price,
-        stockQty: 9999,
-      } as unknown as Product;
+    } catch (err) {
+      console.error("Failed to save product to inventory server:", err);
+      setError("❌ پروڈکٹ سرور پر سیو کرنے میں خرابی ہوئی۔ براہ کرم انٹرنیٹ چیک کریں۔");
+      return;
     }
 
     if (targetProduct) {
@@ -702,41 +699,3 @@ export default function CheckoutPage() {
               <CardTitle>Bill Summary ({invoiceNo})</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>Rs {subtotal.toFixed(2)}</span>
-                </div>
-                
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-slate-700 font-medium">Discount (Rs)</span>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    className="w-28 h-8 text-right text-sm"
-                  />
-                </div>
-
-                <div className="flex justify-between border-t pt-2 text-lg font-bold">
-                  <span>Grand Total</span>
-                  <span className="text-blue-600">Rs {total.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <Button
-                size="lg"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                onClick={completeSale}
-                disabled={processing || cart.length === 0}
-              >
-                {processing ? "Processing..." : "Complete Sale & Print"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </AppShell>
-  );
-}
