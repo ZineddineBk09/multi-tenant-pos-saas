@@ -22,6 +22,20 @@ interface StoreProfile {
   phone: string;
 }
 
+// تمام دکانوں کا ڈیٹا یہاں محفوظ ہے تاکہ کوئی API فیل نہ ہو
+const STORE_PROFILES: Record<string, StoreProfile> = {
+  "amin-cosmetics": {
+    name: "Amin Cosmetics & Toiletries",
+    details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
+    phone: "0333-3187875",
+  },
+  "imdad-cosmetics": {
+    name: "Imdad Cosmetics",
+    details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
+    phone: "03451523394",
+  },
+};
+
 export default function InventoryPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,11 +47,10 @@ export default function InventoryPage() {
   const [price, setPrice] = useState("");
   const [stockQty, setStockQty] = useState("100");
   
-  // ڈائنامیکلی اسٹور کا ڈیٹا لوڈ کرنے کے لیے اسٹیٹ
   const [storeInfo, setStoreInfo] = useState<StoreProfile>({
-    name: "Loading Store...",
-    details: "",
-    phone: "",
+    name: "Amin Cosmetics & Toiletries",
+    details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
+    phone: "0333-3187875",
   });
 
   useEffect(() => {
@@ -45,26 +58,15 @@ export default function InventoryPage() {
       window.location.href = "/login";
       return;
     }
-    loadStoreProfile(); // ڈائنامیک اسٹور پروفাইল فیچ کرنے کے لیے
+    
+    // لوکل سٹوریج یا انوائرمنٹ سے ایکٹو اسٹور کی پروفাইল اٹھائیں
+    const activeTenant = localStorage.getItem("pos:activeTenant") || "amin-cosmetics";
+    if (STORE_PROFILES[activeTenant]) {
+      setStoreInfo(STORE_PROFILES[activeTenant]);
+    }
+
     loadProducts();
   }, []);
-
-  async function loadStoreProfile() {
-    try {
-      const res = await apiFetch<StoreProfile>("/stores/current");
-      if (res && res.name) {
-        setStoreInfo(res);
-      }
-    } catch (err) {
-      console.error("Failed to load store profile, keeping fallback", err);
-      // اگر API سے ڈیٹا نہ ملے تو فالکن نام شو ہو تاکہ ایپ نہ پھنسے
-      setStoreInfo({
-        name: "Amin Cosmetics & Toiletries",
-        details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
-        phone: "0333-3187875",
-      });
-    }
-  }
 
   async function loadProducts() {
     setLoading(true);
@@ -107,13 +109,8 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
-        setProducts((prev) => {
-          const exists = prev.findIndex((p) => p.id === createdProduct.id);
-          if (exists >= 0) {
-            return prev.map((p) => (p.id === createdProduct.id ? createdProduct : p));
-          }
-          return [createdProduct, ...prev];
-        });
+        // فورا لسٹ میں ایڈ کریں تاکہ ٹیبل میں فوراً شو ہو جائے
+        setProducts((prev) => [createdProduct, ...prev]);
 
         setName("");
         setSku("");
