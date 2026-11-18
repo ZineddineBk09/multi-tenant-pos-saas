@@ -66,6 +66,7 @@ export default function InventoryPage() {
     setLoading(true);
     setError("");
     try {
+      // Cache-busting parameter added to prevent Next.js from caching old inventory lists
       const res = await apiFetch<{ data: Product[] }>(`/products?t=${Date.now()}`);
       if (res && res.data) {
         setProducts(res.data);
@@ -103,6 +104,7 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
+        // Instantly push to local state so it appears without delay
         setProducts((prev) => {
           const exists = prev.findIndex((p) => p.id === createdProduct.id);
           if (exists >= 0) {
@@ -116,8 +118,9 @@ export default function InventoryPage() {
         setPrice("");
         setStockQty("100");
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
-        
-        loadProducts();
+
+        // Refresh from server to ensure sync
+        await loadProducts();
       }
     } catch (err) {
       console.error("Failed to add product", err);
@@ -171,7 +174,7 @@ export default function InventoryPage() {
             importedCount++;
           }
         } catch {
-          // Skip failed row
+          // Skip failed row and continue importing remaining items
         }
       }
 
@@ -310,3 +313,31 @@ export default function InventoryPage() {
                 placeholder="Search by product name or SKU/Barcode..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-md h-11 bg-white"
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={loadProducts}
+                  className="h-11 border-slate-300 text-slate-700 hover:bg-slate-100"
+                >
+                  🔄 Refresh
+                </Button>
+                <Button
+                  onClick={exportToCSV}
+                  className="h-11 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  📊 Export to CSV
+                </Button>
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">
+              Total Products in Database:{" "}
+              <span className="font-bold text-slate-900">{products.length}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      {error && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-4 flex justify-between items-center">
+          <p className="text-sm font-
