@@ -22,7 +22,6 @@ interface StoreProfile {
   phone: string;
 }
 
-// تمام دکانوں کا ڈیٹا یہاں محفوظ ہے تاکہ کوئی API فیل نہ ہو
 const STORE_PROFILES: Record<string, StoreProfile> = {
   "amin-cosmetics": {
     name: "Amin Cosmetics & Toiletries",
@@ -59,7 +58,6 @@ export default function InventoryPage() {
       return;
     }
     
-    // لوکل سٹوریج یا انوائرمنٹ سے ایکٹو اسٹور کی پروفাইল اٹھائیں
     const activeTenant = localStorage.getItem("pos:activeTenant") || "amin-cosmetics";
     if (STORE_PROFILES[activeTenant]) {
       setStoreInfo(STORE_PROFILES[activeTenant]);
@@ -109,8 +107,14 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
-        // فورا لسٹ میں ایڈ کریں تاکہ ٹیبل میں فوراً شو ہو جائے
-        setProducts((prev) => [createdProduct, ...prev]);
+        // یہ رہی وہ اہم لائن جو پروڈکٹ کو فورا لسٹ میں اوپر دکھائے گی!
+        setProducts((prev) => {
+          const exists = prev.findIndex((p) => p.id === createdProduct.id);
+          if (exists >= 0) {
+            return prev.map((p) => (p.id === createdProduct.id ? createdProduct : p));
+          }
+          return [createdProduct, ...prev];
+        });
 
         setName("");
         setSku("");
