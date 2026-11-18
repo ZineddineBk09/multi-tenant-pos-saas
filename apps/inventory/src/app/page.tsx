@@ -103,6 +103,7 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
+        // Instantly prepend to local state so the 5th product shows up without waiting
         setProducts((prev) => {
           const exists = prev.findIndex((p) => p.id === createdProduct.id);
           if (exists >= 0) {
@@ -116,8 +117,6 @@ export default function InventoryPage() {
         setPrice("");
         setStockQty("100");
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
-        
-        await loadProducts();
       }
     } catch (err) {
       console.error("Failed to add product", err);
