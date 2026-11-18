@@ -83,8 +83,12 @@ export default function CheckoutPage() {
     setInvoiceNo(`local-${readNextInvoice()}`);
 
     return () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop().catch(() => {});
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.isScanning) {
+            scannerRef.current.stop().catch(() => {});
+          }
+        } catch {}
       }
     };
   }, []);
@@ -180,19 +184,23 @@ export default function CheckoutPage() {
     setCart((prev) => prev.filter((item) => item.sku !== sku));
   }
 
-  function toggleCameraScanner() {
+  async function toggleCameraScanner() {
     if (scannerActive) {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop().catch(() => {});
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.isScanning) {
+            await scannerRef.current.stop();
+          }
+        } catch {}
       }
       setScannerActive(false);
     } else {
       setScannerActive(true);
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           const scanner = new Html5Qrcode("reader");
           scannerRef.current = scanner;
-          scanner.start(
+          await scanner.start(
             { facingMode: "environment" },
             { fps: 10, qrbox: { width: 250, height: 150 } },
             (decodedText) => {
@@ -201,17 +209,13 @@ export default function CheckoutPage() {
               setScannerActive(false);
             },
             () => {}
-          ).catch((err) => {
-            console.error("Camera start error:", err);
-            setNotice("Could not start camera. Make sure permissions are allowed in Safari.");
-            setScannerActive(false);
-          });
+          );
         } catch (err) {
-          console.error("Failed to start html5-qrcode scanner", err);
-          setNotice("Could not start camera scanner. Please use barcode gun or type.");
+          console.error("Camera start error:", err);
+          setNotice("Could not start camera. Make sure permissions are allowed in Safari.");
           setScannerActive(false);
         }
-      }, 150);
+      }, 200);
     }
   }
 
@@ -392,4 +396,160 @@ export default function CheckoutPage() {
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right">Rs {item.price}</td>
-                          <td
+                          <td className="px-3 py-2 text-center">
+                            <div className="inline-flex items-center border border-slate-200 rounded">
+                              <button
+                                onClick={() => updateQty(item.sku, -1)}
+                                className="px-2 py-0.5 text-slate-600 hover:bg-slate-100"
+                              >
+                                -
+                              </button>
+                              <span className="px-3 font-medium">{item.qty}</span>
+                              <button
+                                onClick={() => updateQty(item.sku, 1)}
+                                className="px-2 py-0.5 text-slate-600 hover:bg-slate-100"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold">Rs {item.price * item.qty}</td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => removeFromCart(item.sku)}
+                              className="text-red-600 hover:text-red-800 text-xs font-semibold"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card className="border-slate-200 shadow-sm bg-slate-50">
+            <CardHeader>
+              <CardTitle className="text-lg">Bill Summary ({invoiceNo})</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-semibold text-slate-900">Rs {subtotal.toFixed(2)}</span>
+              </div>
+
+              <div className="flex items-center justify-between text-sm text-slate-600">
+                <span>Discount (%)</span>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={discount}
+                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-24 h-9 bg-white text-right"
+                />
+              </div>
+
+              {discount > 0 && (
+                <div className="flex justify-between text-sm text-green-700">
+                  <span>Discount Amount</span>
+                  <span>- Rs {discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="border-t border-slate-200 pt-3 flex justify-between items-center text-lg font-bold text-slate-900">
+                <span>Grand Total</span>
+                <span className="text-blue-600">Rs {grandTotal.toFixed(2)}</span>
+              </div>
+
+              <Button
+                onClick={handleCheckoutComplete}
+                disabled={loading || cart.length === 0}
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base mt-2"
+              >
+                {loading ? "Processing..." : "Complete Checkout & Print"}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {showReceiptModal && completedOrderData && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 font-mono text-sm">
+            <div className="text-center space-y-1 border-b pb-3">
+              <h2 className="font-bold text-lg text-slate-900">Imdad Cosmetics</h2>
+              <p className="text-xs text-slate-600">Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi</p>
+              <p className="text-xs text-slate-600">Ph: 03451523394</p>
+            </div>
+
+            <div className="flex justify-between text-xs text-slate-500 border-b pb-2">
+              <span>INVOICE NO: #{completedOrderData.invoice}</span>
+              <span>DATE: {new Date().toLocaleDateString()}</span>
+            </div>
+
+            <div className="grid grid-cols-12 text-xs font-bold text-slate-700 border-b pb-1">
+              <span className="col-span-6">PRODUCT DESCRIPTION</span>
+              <span className="col-span-2 text-right">PRICE</span>
+              <span className="col-span-2 text-center">QTY</span>
+              <span className="col-span-2 text-right">TOTAL</span>
+            </div>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto py-1">
+              {completedOrderData.items.map((item, idx) => (
+                <div key={idx} className="grid grid-cols-12 text-xs items-center py-1 border-b border-slate-100">
+                  <span className="col-span-6 font-semibold">{item.name}</span>
+                  <span className="col-span-2 text-right">{item.price}</span>
+                  <span className="col-span-2 text-center">{item.qty}</span>
+                  <span className="col-span-2 text-right font-bold">{(item.price * item.qty).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t pt-3 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span>SUBTOTAL:</span>
+                <span>Rs {completedOrderData.subtotal.toFixed(2)}</span>
+              </div>
+              {completedOrderData.discountAmt > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>DISCOUNT:</span>
+                  <span>- Rs {completedOrderData.discountAmt.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-bold text-slate-900 border-t pt-2">
+                <span>TOTAL PRICE:</span>
+                <span className="text-blue-600">Rs {completedOrderData.grandTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="text-center text-xs text-slate-500 border-t pt-3">
+              Thank you for shopping with us!
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={() => window.print()}
+                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                🖨 Print Receipt
+              </Button>
+              <Button
+                onClick={() => setShowReceiptModal(false)}
+                variant="outline"
+                className="flex-1 border-slate-300 text-slate-700"
+              >
+                Close / New Sale
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AppShell>
+  );
+}
