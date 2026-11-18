@@ -69,7 +69,6 @@ export default function CheckoutPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
-  // ڈائنامیکلی اسٹور کا ڈیٹا لوڈ کرنے کے لیے اسٹیٹ
   const [storeInfo, setStoreInfo] = useState<StoreProfile>({
     name: "Loading Store...",
     details: "",
@@ -82,7 +81,7 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
-    loadStoreProfile(); // ڈائنامیک اسٹور پروفাইল فیچ کرنے کے لیے
+    loadStoreProfile();
     setInvoiceNo(`local-${readNextInvoice()}`);
   }, []);
 
@@ -100,7 +99,6 @@ export default function CheckoutPage() {
       }
     } catch (err) {
       console.error("Failed to load store profile, keeping fallback", err);
-      // اگر API سے ڈیٹا نہ ملے تو نیا یا پرانا فالکن نام شو ہو تاکہ ایپ نہ پھنسے
       setStoreInfo({
         name: "Amin Cosmetics & Toiletries",
         details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
