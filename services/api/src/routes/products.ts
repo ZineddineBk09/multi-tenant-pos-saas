@@ -29,7 +29,10 @@ export async function productRoutes(app: FastifyInstance) {
   app.get(
     "/products",
     async (request, reply) => {
-      const { q, categoryId } = request.query as { q?: string; categoryId?: string };
+      // .passthrough() یا شیطانی کیش بسٹر `t` اور دوسرے کیوری پیرامیٹرز کو سنبھالنے کے لیے
+      const query = request.query as { q?: string; categoryId?: string; t?: string };
+      const q = query.q;
+      const categoryId = query.categoryId;
 
       const result = await runWithTenant(request, reply, async (tx) => {
         const conditions = [];
@@ -59,7 +62,8 @@ export async function productRoutes(app: FastifyInstance) {
   app.get(
     "/products/search",
     async (request, reply) => {
-      const { q } = request.query as { q?: string };
+      const query = request.query as { q?: string };
+      const q = query.q;
       if (!q) return { data: [] };
 
       const result = await runWithTenant(request, reply, async (tx) => {
@@ -125,7 +129,20 @@ export async function productRoutes(app: FastifyInstance) {
           })
           .returning();
 
-        return product ? mapProduct(product) : null;
+        if (!product) return null;
+
+        // اگر کیٹیگری آئی ڈی موجود ہے تو اس کا ریکارڈ بھی ساتھ جوڑ کر میپ کریں تاکہ کریش نہ ہو
+        let category = null;
+        if (product.categoryId) {
+          const [catRow] = await tx
+            .select()
+            .from(categories)
+            .where(eq(categories.id, product.categoryId))
+            .limit(1);
+          category = catRow || null;
+        }
+
+        return mapProduct(product, category);
       });
 
       return reply.status(201).send(result);
@@ -148,7 +165,19 @@ export async function productRoutes(app: FastifyInstance) {
           .where(eq(products.id, id))
           .returning();
 
-        return product ? mapProduct(product) : null;
+        if (!product) return null;
+
+        let category = null;
+        if (product.categoryId) {
+          const [catRow] = await tx
+            .select()
+            .from(categories)
+            .where(eq(categories.id, product.categoryId))
+            .limit(1);
+          category = catRow || null;
+        }
+
+        return mapProduct(product, category);
       });
 
       if (!result) return reply.status(404).send({ error: "Product not found" });
@@ -250,7 +279,17 @@ export async function productRoutes(app: FastifyInstance) {
           reason,
         });
 
-        return updated ? mapProduct(updated) : null;
+        let category = null;
+        if (updated && updated.categoryId) {
+          const [catRow] = await tx
+            .select()
+            .from(categories)
+            .where(eq(categories.id, updated.categoryId))
+            .limit(1);
+          category = catRow || null;
+        }
+
+        return updated ? mapProduct(updated, category) : null;
       });
 
       if (!result) {
