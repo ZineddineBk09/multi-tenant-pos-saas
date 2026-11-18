@@ -69,10 +69,11 @@ export default function CheckoutPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
+  // ڈائنامیکلی اسٹور کا ڈیٹا لوڈ کرنے کے لیے فالکن سیٹ اپ
   const [storeInfo, setStoreInfo] = useState<StoreProfile>({
-    name: "Imdad Cosmetics",
-    details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-    phone: "03451523394",
+    name: "Loading Store...",
+    details: "",
+    phone: "",
   });
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
+    loadStoreProfile(); // ڈائنامیک اسٹور پروفাইল فیچ کرنے کے لیے
     setInvoiceNo(`local-${readNextInvoice()}`);
   }, []);
 
@@ -89,6 +91,23 @@ export default function CheckoutPage() {
       stopCamera();
     };
   }, []);
+
+  async function loadStoreProfile() {
+    try {
+      const res = await apiFetch<StoreProfile>("/stores/current");
+      if (res && res.name) {
+        setStoreInfo(res);
+      }
+    } catch (err) {
+      console.error("Failed to load store profile, keeping fallback", err);
+      // اگر API سے ڈیٹا نہ ملے تو پرانا فالکن نام شو ہو تاکہ ایپ نہ پھنسے
+      setStoreInfo({
+        name: "Amin Cosmetics & Toiletries",
+        details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
+        phone: "0333-3187875",
+      });
+    }
+  }
 
   async function loadProducts() {
     try {
@@ -533,193 +552,3 @@ export default function CheckoutPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-12 px-4 border-blue-600 text-blue-600"
-                onClick={startCameraScanner}
-              >
-                📷 Camera Scan
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="destructive"
-                className="h-12 px-4"
-                onClick={stopCamera}
-              >
-                ✕ Close Camera
-              </Button>
-            )}
-          </div>
-
-          {cameraOpen && (
-            <div className="relative overflow-hidden rounded-xl border-2 border-blue-500 bg-black">
-              <video ref={videoRef} className="w-full max-h-64 object-cover" playsInline muted />
-              <p className="bg-blue-600 text-white text-center text-xs py-1">
-                Point camera at Barcode
-              </p>
-            </div>
-          )}
-
-          <form onSubmit={handleAddAndSave} className="space-y-3 p-4 rounded-xl border border-slate-200 bg-slate-50">
-            <div className="relative flex items-center">
-              <Input
-                placeholder="Item Name (Auto-fills on scan or use mic)..."
-                value={itemNameInput}
-                onChange={(e) => setItemNameInput(e.target.value)}
-                className="h-12 text-base pr-12 bg-white font-medium"
-                required
-              />
-              <button
-                type="button"
-                onClick={startVoiceSearch}
-                className="absolute right-3 p-2 text-amber-600 hover:text-amber-700 text-lg"
-                title="Voice Search (Speak Item Name)"
-              >
-                🎤 {isListening ? "..." : ""}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                type="number"
-                min="1"
-                placeholder="Qty"
-                value={qtyInput}
-                onChange={(e) => setQtyInput(e.target.value)}
-                className="h-12 text-base bg-white"
-                required
-              />
-              <Input
-                type="number"
-                placeholder="Price (Rs)"
-                value={priceInput}
-                onChange={(e) => setPriceInput(e.target.value)}
-                className="h-12 text-base bg-white"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-12 bg-green-600 hover:bg-green-700 text-white font-bold text-base shadow-sm"
-            >
-              + Add & Save
-            </Button>
-          </form>
-
-          {error && <p className="text-sm text-blue-600 font-medium bg-blue-50 p-2 rounded">{error}</p>}
-
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-blue-600 text-white text-xs uppercase">
-                <tr>
-                  <th className="px-3 py-3">Code</th>
-                  <th className="px-3 py-3">Item Name</th>
-                  <th className="px-3 py-3 text-center">Qty</th>
-                  <th className="px-3 py-3 text-right">Price (Rs)</th>
-                  <th className="px-3 py-3 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {cart.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                      Scan barcode or speak item name to add instantly...
-                    </td>
-                  </tr>
-                ) : (
-                  cart.map((item) => {
-                    const rowTotal = ((parseFloat(item.product.price) || 0) * item.quantity).toFixed(2);
-                    return (
-                      <tr key={item.product.id}>
-                        <td className="px-3 py-2 text-xs font-mono text-slate-600">{item.product.sku}</td>
-                        <td className="px-3 py-2 font-medium text-slate-900">{item.product.name}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              onClick={() => updateQty(item.product.id, -1)}
-                            >
-                              −
-                            </Button>
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.quantity}
-                              onChange={(e) =>
-                                setExactQty(item.product.id, parseInt(e.target.value) || 0)
-                              }
-                              className="w-12 rounded border border-slate-300 text-center text-sm font-bold py-0.5"
-                            />
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              onClick={() => updateQty(item.product.id, 1)}
-                            >
-                              +
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            value={item.product.price}
-                            onChange={(e) => updateItemPrice(item.product.id, e.target.value)}
-                            className="w-20 rounded border border-slate-300 text-right text-sm px-1 py-0.5"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right font-bold">{rowTotal}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Bill Summary ({invoiceNo})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>Rs {subtotal.toFixed(2)}</span>
-                </div>
-                
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-slate-700 font-medium">Discount (Rs)</span>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    className="w-28 h-8 text-right text-sm"
-                  />
-                </div>
-
-                <div className="flex justify-between border-t pt-2 text-lg font-bold">
-                  <span>Grand Total</span>
-                  <span className="text-blue-600">Rs {total.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <Button
-                size="lg"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                onClick={completeSale}
-                disabled={processing || cart.length === 0}
-              >
-                {processing ? "Processing..." : "Complete Sale & Print"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </AppShell>
-  );
-}
