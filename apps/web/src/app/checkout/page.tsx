@@ -612,7 +612,7 @@ export default function CheckoutPage() {
               <thead className="bg-blue-600 text-white text-xs uppercase">
                 <tr>
                   <th className="px-3 py-3">Code</th>
-                  <th className="px8-3 py-3">Item Name</th>
+                  <th className="px-3 py-3">Item Name</th>
                   <th className="px-3 py-3 text-center">Qty</th>
                   <th className="px-3 py-3 text-right">Price (Rs)</th>
                   <th className="px-3 py-3 text-right">Total</th>
@@ -626,7 +626,7 @@ export default function CheckoutPage() {
                     </td>
                   </tr>
                 ) : (
-                  cart.item ? cart : cart.map((item) => {
+                  cart.map((item) => {
                     const rowTotal = ((parseFloat(item.product.price) || 0) * item.quantity).toFixed(2);
                     return (
                       <tr key={item.product.id}>
