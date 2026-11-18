@@ -32,35 +32,39 @@ export default function InventoryPage() {
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
   const [stockQty, setStockQty] = useState("100");
+  
+  // ڈائنامیکلی اسٹور کا ڈیٹا لوڈ کرنے کے لیے اسٹیٹ
   const [storeInfo, setStoreInfo] = useState<StoreProfile>({
-    name: "Imdad Cosmetics",
-    details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-    phone: "03451523394",
+    name: "Loading Store...",
+    details: "",
+    phone: "",
   });
-
-  const storeProfiles: Record<string, StoreProfile> = {
-    "imdad-cosmetics": {
-      name: "Imdad Cosmetics",
-      details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-      phone: "03451523394",
-    },
-  };
 
   useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
     }
-    const currentTenant = process.env.NEXT_PUBLIC_TENANT_ID || "imdad-cosmetics";
-    setStoreInfo(
-      storeProfiles[currentTenant] ?? {
-        name: "Imdad Cosmetics",
-        details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-        phone: "03451523394",
-      }
-    );
+    loadStoreProfile(); // ڈائنامیک اسٹور پروفাইল فیچ کرنے کے لیے
     loadProducts();
   }, []);
+
+  async function loadStoreProfile() {
+    try {
+      const res = await apiFetch<StoreProfile>("/stores/current");
+      if (res && res.name) {
+        setStoreInfo(res);
+      }
+    } catch (err) {
+      console.error("Failed to load store profile, keeping fallback", err);
+      // اگر API سے ڈیٹا نہ ملے تو فالکن نام شو ہو تاکہ ایپ نہ پھنسے
+      setStoreInfo({
+        name: "Amin Cosmetics & Toiletries",
+        details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
+        phone: "0333-3187875",
+      });
+    }
+  }
 
   async function loadProducts() {
     setLoading(true);
@@ -103,7 +107,6 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
-        // Instantly prepend to local state so the 5th product shows up without waiting
         setProducts((prev) => {
           const exists = prev.findIndex((p) => p.id === createdProduct.id);
           if (exists >= 0) {
@@ -199,9 +202,10 @@ export default function InventoryPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
+    const safeStoreName = storeInfo.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
     link.setAttribute(
       "download",
-      `imdad_cosmetics_inventory_${new Date().toISOString().slice(0, 10)}.csv`
+      `${safeStoreName}_inventory_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
