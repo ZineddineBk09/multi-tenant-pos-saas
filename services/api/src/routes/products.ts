@@ -29,7 +29,6 @@ export async function productRoutes(app: FastifyInstance) {
   app.get(
     "/products",
     async (request, reply) => {
-      // .passthrough() یا شیطانی کیش بسٹر `t` اور دوسرے کیوری پیرامیٹرز کو سنبھالنے کے لیے
       const query = request.query as { q?: string; categoryId?: string; t?: string };
       const q = query.q;
       const categoryId = query.categoryId;
@@ -112,7 +111,8 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
       }
 
-      const tenantId = "default-tenant"; // Fallback tenant for frictionless POS use
+      // اب یہ ریکوئسٹ کے ہیڈر سے براہ راست اصل دکان (Tenant) کی آئی ڈی اٹھائے گا
+      const tenantId = (request.headers["x-tenant-id"] as string) || "amin-cosmetics";
       const data = parsed.data;
 
       const result = await runWithTenant(request, reply, async (tx) => {
@@ -131,7 +131,6 @@ export async function productRoutes(app: FastifyInstance) {
 
         if (!product) return null;
 
-        // اگر کیٹیگری آئی ڈی موجود ہے تو اس کا ریکارڈ بھی ساتھ جوڑ کر میپ کریں تاکہ کریش نہ ہو
         let category = null;
         if (product.categoryId) {
           const [catRow] = await tx
@@ -224,7 +223,7 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
       }
 
-      const tenantId = "default-tenant";
+      const tenantId = (request.headers["x-tenant-id"] as string) || "amin-cosmetics";
 
       const result = await runWithTenant(request, reply, async (tx) => {
         const [category] = await tx
@@ -247,7 +246,7 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
       }
 
-      const tenantId = "default-tenant";
+      const tenantId = (request.headers["x-tenant-id"] as string) || "amin-cosmetics";
       const { productId, delta, reason } = parsed.data;
 
       const result = await runWithTenant(request, reply, async (tx) => {
