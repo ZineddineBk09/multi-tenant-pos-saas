@@ -62,11 +62,12 @@ export default function InventoryPage() {
     loadProducts();
   }, []);
 
+  // Cache-busting parameter (?t=...) added so Next.js never serves stale cached inventory data
   async function loadProducts() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch<{ data: Product[] }>("/products");
+      const res = await apiFetch<{ data: Product[] }>(`/products?t=${Date.now()}`);
       if (res && res.data) {
         setProducts(res.data);
       } else {
