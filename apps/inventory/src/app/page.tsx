@@ -103,7 +103,6 @@ export default function InventoryPage() {
           : (response as Product);
 
       if (createdProduct) {
-        // Immediately update local state so the 5th product appears instantly without waiting
         setProducts((prev) => {
           const exists = prev.findIndex((p) => p.id === createdProduct.id);
           if (exists >= 0) {
@@ -118,7 +117,6 @@ export default function InventoryPage() {
         setStockQty("100");
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
         
-        // Also fetch from server to ensure full sync
         loadProducts();
       }
     } catch (err) {
@@ -173,7 +171,7 @@ export default function InventoryPage() {
             importedCount++;
           }
         } catch {
-          // Skip failed row and continue importing remaining items
+          // Skip failed row
         }
       }
 
@@ -312,30 +310,3 @@ export default function InventoryPage() {
                 placeholder="Search by product name or SKU/Barcode..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-md h-11 bg-white"
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={loadProducts}
-                  className="h-11 border-slate-300 text-slate-700 hover:bg-slate-100"
-                >
-                  🔄 Refresh
-                </Button>
-                <Button
-                  onClick={exportToCSV}
-                  className="h-11 bg-green-600 hover:bg-green-700 text-white"
-                >
-                  📊 Export to CSV
-                </Button>
-              </div>
-            </div>
-            <div className="text-xs text-slate-500">
-              Total Products in Database:{" "}
-              <span className="font-bold text-slate-900">{products.length}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      {error && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-4 flex justify-between
