@@ -222,9 +222,9 @@ export default function CheckoutPage() {
 
   async function handleAddAndSave(e: React.FormEvent) {
     e.preventDefault();
-    const sku = barcodeInput.trim() || `SKU-${Date.now().toString().slice(-6)}`;
+    const sku = barcodeInput.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
     const name = itemNameInput.trim() || `Item-${sku}`;
-    const qty = parseInt(qtyInput) || 1;
+    const qty = parseInt(qtyInput, 10) || 1;
     const price = priceInput.trim() || "0";
 
     setError("");
@@ -232,7 +232,7 @@ export default function CheckoutPage() {
     let targetProduct: Product | undefined;
 
     try {
-      const savedProduct = await apiFetch<Product>("/products", {
+      const response = await apiFetch<Product | { data: Product }>("/products", {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -241,6 +241,11 @@ export default function CheckoutPage() {
           stockQty: 9999,
         }),
       });
+
+      const savedProduct =
+        response && typeof response === "object" && "data" in response
+          ? (response as { data: Product }).data
+          : (response as Product);
 
       if (savedProduct) {
         targetProduct = savedProduct;
@@ -264,7 +269,7 @@ export default function CheckoutPage() {
 
     if (targetProduct) {
       addToCart(targetProduct, qty);
-      setError(`Item successfully saved to inventory & added to cart!`);
+      setError(`✔ آئٹم کامیابی کے ساتھ انوینٹری میں سیو اور کارٹ میں ایڈ ہو گئی ہے!`);
       
       setBarcodeInput("");
       setItemNameInput("");
@@ -607,7 +612,7 @@ export default function CheckoutPage() {
               <thead className="bg-blue-600 text-white text-xs uppercase">
                 <tr>
                   <th className="px-3 py-3">Code</th>
-                  <th className="px-3 py-3">Item Name</th>
+                  <th className="px8-3 py-3">Item Name</th>
                   <th className="px-3 py-3 text-center">Qty</th>
                   <th className="px-3 py-3 text-right">Price (Rs)</th>
                   <th className="px-3 py-3 text-right">Total</th>
@@ -621,7 +626,7 @@ export default function CheckoutPage() {
                     </td>
                   </tr>
                 ) : (
-                  cart.map((item) => {
+                  cart.item ? cart : cart.map((item) => {
                     const rowTotal = ((parseFloat(item.product.price) || 0) * item.quantity).toFixed(2);
                     return (
                       <tr key={item.product.id}>
