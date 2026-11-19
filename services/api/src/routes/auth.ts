@@ -88,4 +88,25 @@ export async function authRoutes(app: FastifyInstance) {
 
     return { user: mapUser(user), tenant: mapTenant(tenant) };
   });
+
+  // The single source of "which store am I?" for every page: always the logged-in tenant.
+  app.get("/stores/current", { preHandler: [app.authenticate] }, async (request, reply) => {
+    const payload = request.user;
+    if (!payload) return reply.status(401).send({ error: "Unauthorized" });
+
+    const [tenant] = await db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.id, payload.tenantId))
+      .limit(1);
+
+    if (!tenant) return reply.status(404).send({ error: "Store not found" });
+
+    return {
+      slug: tenant.slug,
+      name: tenant.name,
+      details: tenant.address ?? "",
+      phone: tenant.phone ?? "",
+    };
+  });
 }

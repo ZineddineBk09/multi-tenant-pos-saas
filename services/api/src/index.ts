@@ -37,6 +37,13 @@ async function buildApp() {
     }
     req.log.error({ err }, "unhandled error");
     const code = (err as any).code; // Postgres error code
+    const status = (err as any).statusCode;
+    if (status === 401) return reply.status(401).send({ error: "Unauthorized" });
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      return reply.status(status).send({ error: (err as Error).message });
+    }
+    if (code === "22P02") return reply.status(400).send({ error: "Invalid id" });
+    if (code === "23503") return reply.status(400).send({ error: "Referenced record not found" });
     if (code === "23505") return reply.status(409).send({ error: "SKU already exists" });
     if (code === "23502") return reply.status(400).send({ error: "Missing required field" });
     if (code === "42703" || code === "42P01") {

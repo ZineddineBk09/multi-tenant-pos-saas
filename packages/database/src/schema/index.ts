@@ -21,6 +21,8 @@ export const tenants = pgTable("tenants", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   plan: text("plan").notNull().default("starter"),
+  address: text("address"),
+  phone: text("phone"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

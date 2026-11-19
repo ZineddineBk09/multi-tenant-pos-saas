@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { eq, orderItems, orders, products } from "@pos/database";
+import { and, eq, orderItems, orders, products } from "@pos/database";
 import { z } from "zod";
 import { mapOrder } from "../lib/mappers.js";
 import { runWithTenant } from "../middleware/tenant-context.js";
 
-const TAX_RATE = 0.08;
+// Printed receipts never included tax, so the default is 0. Set TAX_RATE (e.g. 0.08) to enable it.
+const TAX_RATE = Number(process.env.TAX_RATE ?? 0) || 0;
 
 const createOrderSchema = z.object({
   items: z
@@ -12,9 +13,13 @@ const createOrderSchema = z.object({
       z.object({
         productId: z.string().uuid(),
         quantity: z.number().int().min(1),
+        // Optional counter price override (the checkout screen lets the cashier edit the price).
+        unitPrice: z.union([z.string(), z.number()]).optional(),
       }),
     )
     .min(1),
+  // Flat discount in Rs, applied to the subtotal.
+  discount: z.union([z.string(), z.number()]).optional(),
 });
 
 export async function orderRoutes(app: FastifyInstance) {
@@ -27,11 +32,10 @@ export async function orderRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
       }
 
-      const tenantId = request.user!.tenantId;
       const cashierId = request.user!.userId;
 
       try {
-        const result = await runWithTenant(request, reply, async (tx) => {
+        const result = await runWithTenant(request, async (tx, tenantId) => {
           let subtotal = 0;
           const lineItems: Array<{
             productId: string;
@@ -44,7 +48,7 @@ export async function orderRoutes(app: FastifyInstance) {
             const [product] = await tx
               .select()
               .from(products)
-              .where(eq(products.id, item.productId))
+              .where(and(eq(products.id, item.productId), eq(products.tenantId, tenantId)))
               .limit(1);
 
             if (!product) {
@@ -55,19 +59,28 @@ export async function orderRoutes(app: FastifyInstance) {
               throw new Error(`Insufficient stock for ${product.name}`);
             }
 
-            const unitPrice = parseFloat(product.price);
+            const override =
+              item.unitPrice !== undefined ? Number(item.unitPrice) : Number.NaN;
+            const unitPrice = Number.isFinite(override) && override >= 0
+              ? override
+              : parseFloat(product.price);
             subtotal += unitPrice * item.quantity;
 
             lineItems.push({
               productId: product.id,
               quantity: item.quantity,
-              unitPrice: product.price,
+              unitPrice: unitPrice.toFixed(2),
               productName: product.name,
             });
           }
 
-          const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-          const total = Math.round((subtotal + tax) * 100) / 100;
+          const discount = Math.min(
+            Math.max(Number(parsed.data.discount ?? 0) || 0, 0),
+            subtotal,
+          );
+          const taxable = subtotal - discount;
+          const tax = Math.round(taxable * TAX_RATE * 100) / 100;
+          const total = Math.round((taxable + tax) * 100) / 100;
 
           const [order] = await tx
             .insert(orders)
@@ -98,7 +111,7 @@ export async function orderRoutes(app: FastifyInstance) {
             const [currentProduct] = await tx
               .select()
               .from(products)
-              .where(eq(products.id, item.productId))
+              .where(and(eq(products.id, item.productId), eq(products.tenantId, tenantId)))
               .limit(1);
 
             if (currentProduct) {
@@ -108,7 +121,7 @@ export async function orderRoutes(app: FastifyInstance) {
                   stockQty: currentProduct.stockQty - item.quantity,
                   updatedAt: new Date(),
                 })
-                .where(eq(products.id, item.productId));
+                .where(and(eq(products.id, item.productId), eq(products.tenantId, tenantId)));
             }
           }
 
@@ -134,14 +147,18 @@ export async function orderRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      const result = await runWithTenant(request, reply, async (tx) => {
-        const [order] = await tx.select().from(orders).where(eq(orders.id, id)).limit(1);
+      const result = await runWithTenant(request, async (tx, tenantId) => {
+        const [order] = await tx
+          .select()
+          .from(orders)
+          .where(and(eq(orders.id, id), eq(orders.tenantId, tenantId)))
+          .limit(1);
         if (!order) return null;
 
         const items = await tx
           .select()
           .from(orderItems)
-          .where(eq(orderItems.orderId, id));
+          .where(and(eq(orderItems.orderId, id), eq(orderItems.tenantId, tenantId)));
 
         return {
           ...mapOrder(order),
