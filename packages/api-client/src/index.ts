@@ -1,7 +1,6 @@
 import type { ApiError } from "@pos/types";
 
 const TOKEN_KEY = "pos_auth_token";
-const TENANT_KEY = "pos:activeTenant";
 
 export function getApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -20,11 +19,6 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-export function getActiveTenant(): string {
-  if (typeof window === "undefined") return "amin-cosmetics";
-  return localStorage.getItem(TENANT_KEY) || "amin-cosmetics";
-}
-
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -41,11 +35,11 @@ export async function apiFetch<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const token = getToken();
-  const activeTenant = getActiveTenant();
 
+  // The store (tenant) is identified ONLY by the login token on the server.
+  // Never send a client-chosen tenant header.
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "x-tenant-id": activeTenant, // یہ لازمی ہے تاکہ ہر پروڈکٹ اور بارکوڈ اسی دکان کے خانے میں جائے
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -57,6 +51,12 @@ export async function apiFetch<T>(
     ...options,
     headers,
   });
+
+  if (response.status === 401 && path !== "/auth/login" && typeof window !== "undefined") {
+    // Stale or invalid login: drop it so no page keeps showing another store's context.
+    clearToken();
+    window.location.href = "/login";
+  }
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiError;

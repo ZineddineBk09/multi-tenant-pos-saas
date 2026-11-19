@@ -22,17 +22,20 @@ interface CartItem {
 }
 
 interface StoreProfile {
+  slug?: string;
   name: string;
   details: string;
   phone: string;
 }
 
-const INVOICE_KEY = "pos:nextInvoiceNo";
+// Invoice numbers are counted per store so two shops on one device never share a counter.
+let invoiceScope = "unscoped";
+const invoiceKey = () => `pos:nextInvoiceNo:${invoiceScope}`;
 const INVOICE_SEED = 17;
 
 function readNextInvoice(): number {
   try {
-    const n = Number(localStorage.getItem(INVOICE_KEY));
+    const n = Number(localStorage.getItem(invoiceKey()));
     return Number.isInteger(n) && n >= INVOICE_SEED ? n : INVOICE_SEED;
   } catch {
     return INVOICE_SEED;
@@ -42,7 +45,7 @@ function readNextInvoice(): number {
 function consumeInvoice(): string {
   const current = readNextInvoice();
   try {
-    localStorage.setItem(INVOICE_KEY, String(current + 1));
+    localStorage.setItem(invoiceKey(), String(current + 1));
   } catch {}
   return `local-${current}`;
 }
@@ -81,8 +84,7 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
-    loadStoreProfile();
-    setInvoiceNo(`local-${readNextInvoice()}`);
+    loadStoreProfile().finally(() => setInvoiceNo(`local-${readNextInvoice()}`));
   }, []);
 
   useEffect(() => {
@@ -95,15 +97,13 @@ export default function CheckoutPage() {
     try {
       const res = await apiFetch<StoreProfile>("/stores/current");
       if (res && res.name) {
+        invoiceScope = res.slug || res.name;
         setStoreInfo(res);
       }
     } catch (err) {
-      console.error("Failed to load store profile, keeping fallback", err);
-      setStoreInfo({
-        name: "Amin Cosmetics & Toiletries",
-        details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
-        phone: "0333-3187875",
-      });
+      // Never fall back to another store's details.
+      console.error("Failed to load store profile", err);
+      setStoreInfo({ name: "Store", details: "", phone: "" });
     }
   }
 
@@ -246,9 +246,11 @@ export default function CheckoutPage() {
 
     setError("");
 
-    let targetProduct: Product | undefined;
+    let targetProduct: Product | undefined = products.find(
+      (p) => p.sku && p.sku.toLowerCase() === sku.toLowerCase(),
+    );
 
-    try {
+    if (!targetProduct) try {
       // پروڈکٹ کو براہ راست سرور اور انوینٹری ڈیٹا بیس میں محفوظ کرنا
       const response = await apiFetch<Product | { data: Product }>("/products", {
         method: "POST",
@@ -282,17 +284,14 @@ export default function CheckoutPage() {
     }
 
     if (!targetProduct) {
-      targetProduct = {
-        id: `custom-${Date.now()}`,
-        name,
-        sku,
-        price,
-        stockQty: 9999,
-      } as unknown as Product;
+      setError("❌ آئٹم سرور پر محفوظ نہیں ہوئی، اس لیے کارٹ میں ایڈ نہیں کی گئی۔");
+      return;
     }
 
     if (targetProduct) {
       addToCart(targetProduct, qty);
+      // Re-read the list from the server so the list matches what is really stored.
+      await loadProducts();
       setError(`✔ آئٹم کامیابی کے ساتھ انوینٹری میں سیو اور کارٹ میں ایڈ ہو گئی ہے!`);
       
       setBarcodeInput("");
@@ -366,25 +365,29 @@ export default function CheckoutPage() {
     setError("");
 
     try {
-      const issuedInvoice = consumeInvoice();
-      const fallbackOrder: Order = {
-        id: issuedInvoice,
-        subtotal: subtotal.toFixed(2),
-        total: total.toFixed(2),
-        items: cart.map((item, idx) => ({
-          id: `item-${idx}`,
-          productName: item.product.name,
-          quantity: item.quantity,
-          unitPrice: item.product.price,
-        })),
-      } as unknown as Order;
+      const order = await apiFetch<Order>("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+            unitPrice: item.product.price,
+          })),
+          discount: discountVal,
+        }),
+      });
 
-      setReceipt(fallbackOrder);
+      const issuedInvoice = consumeInvoice();
+      setReceipt({ ...order, id: issuedInvoice } as Order);
       setCart([]);
-      setDiscountAmount("");
       setInvoiceNo(`local-${readNextInvoice()}`);
-    } catch {
-      setError("Checkout failed. Please try again.");
+      // Stock changed on the server: refresh the list.
+      await loadProducts();
+    } catch (err) {
+      // The sale was NOT saved: keep the cart so nothing is lost, and say why.
+      setError(
+        `❌ سیل محفوظ نہیں ہوئی: ${err instanceof Error ? err.message : "Checkout failed"}`,
+      );
     } finally {
       setProcessing(false);
     }
@@ -490,7 +493,7 @@ export default function CheckoutPage() {
                 </Button>
               </div>
 
-              <Button className="w-full mt-2" onClick={() => setReceipt(null)}>
+              <Button className="w-full mt-2" onClick={() => { setReceipt(null); setDiscountAmount(""); }}>
                 New Sale
               </Button>
             </CardContent>

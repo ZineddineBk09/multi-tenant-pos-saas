@@ -7,6 +7,8 @@ export interface Tenant {
   slug: string;
   name: string;
   plan: string;
+  address: string | null;
+  phone: string | null;
   createdAt: string;
 }
 

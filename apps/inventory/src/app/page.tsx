@@ -22,19 +22,6 @@ interface StoreProfile {
   phone: string;
 }
 
-const STORE_PROFILES: Record<string, StoreProfile> = {
-  "amin-cosmetics": {
-    name: "Amin Cosmetics & Toiletries",
-    details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
-    phone: "0333-3187875",
-  },
-  "imdad-cosmetics": {
-    name: "Imdad Cosmetics",
-    details: "Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi",
-    phone: "03451523394",
-  },
-};
-
 export default function InventoryPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
@@ -46,11 +33,7 @@ export default function InventoryPage() {
   const [price, setPrice] = useState("");
   const [stockQty, setStockQty] = useState("100");
   
-  const [storeInfo, setStoreInfo] = useState<StoreProfile>({
-    name: "Amin Cosmetics & Toiletries",
-    details: "Shop #22, 2nd Floor, Al Hilal Market, Bara Bazar, Rawalpindi",
-    phone: "0333-3187875",
-  });
+  const [storeInfo, setStoreInfo] = useState<StoreProfile>({ name: "", details: "", phone: "" });
 
   useEffect(() => {
     if (!getToken()) {
@@ -58,13 +41,19 @@ export default function InventoryPage() {
       return;
     }
     
-    const activeTenant = localStorage.getItem("pos:activeTenant") || "amin-cosmetics";
-    if (STORE_PROFILES[activeTenant]) {
-      setStoreInfo(STORE_PROFILES[activeTenant]);
-    }
-
+    loadStoreProfile();
     loadProducts();
   }, []);
+
+  // The store always comes from the logged-in account (server), never from a default.
+  async function loadStoreProfile() {
+    try {
+      const res = await apiFetch<StoreProfile>("/stores/current");
+      if (res && res.name) setStoreInfo(res);
+    } catch (err) {
+      console.error("Failed to load store profile", err);
+    }
+  }
 
   async function loadProducts() {
     setLoading(true);
@@ -120,6 +109,8 @@ export default function InventoryPage() {
         setSku("");
         setPrice("");
         setStockQty("100");
+        // Re-read from the server: the list must reflect what is really saved.
+        await loadProducts();
         setError("✔ پروڈکٹ کامیابی کے ساتھ انوینٹری میں ایڈ ہو گئی ہے!");
       }
     } catch (err) {
@@ -241,7 +232,9 @@ export default function InventoryPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{storeInfo.name}</h1>
           <p className="text-sm text-slate-700 font-medium">
-            {storeInfo.details} | Ph: {storeInfo.phone}
+            {[storeInfo.details, storeInfo.phone ? `Ph: ${storeInfo.phone}` : ""]
+              .filter(Boolean)
+              .join(" | ")}
           </p>
         </div>
         <Button

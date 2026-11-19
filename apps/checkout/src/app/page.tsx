@@ -24,12 +24,14 @@ interface CartItem {
 }
 
 // Robust Invoice Helper Functions (LocalStorage synced)
-const INVOICE_KEY = "pos:nextInvoiceNo";
+// Invoice numbers are counted per store so two shops on one device never share a counter.
+let invoiceScope = "unscoped";
+const invoiceKey = () => `pos:nextInvoiceNo:${invoiceScope}`;
 const INVOICE_SEED = 17;
 
 function readNextInvoice(): number {
   try {
-    const n = Number(localStorage.getItem(INVOICE_KEY));
+    const n = Number(localStorage.getItem(invoiceKey()));
     return Number.isInteger(n) && n >= INVOICE_SEED ? n : INVOICE_SEED;
   } catch {
     return INVOICE_SEED;
@@ -39,7 +41,7 @@ function readNextInvoice(): number {
 function consumeInvoice(): string {
   const current = readNextInvoice();
   try {
-    localStorage.setItem(INVOICE_KEY, String(current + 1));
+    localStorage.setItem(invoiceKey(), String(current + 1));
   } catch {}
   return `local-${current}`;
 }
@@ -57,6 +59,9 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
   
+  // The store always comes from the logged-in account (server), never from a hardcoded name.
+  const [storeInfo, setStoreInfo] = useState({ name: "", details: "", phone: "" });
+
   // Dynamic Invoice Number state
   const [invoiceNo, setInvoiceNo] = useState("local-17");
 
@@ -78,6 +83,15 @@ export default function CheckoutPage() {
       return;
     }
     loadProducts();
+    apiFetch<{ slug?: string; name: string; details: string; phone: string }>("/stores/current")
+      .then((res) => {
+        if (res?.name) {
+          invoiceScope = res.slug || res.name;
+          setStoreInfo({ name: res.name, details: res.details, phone: res.phone });
+        }
+      })
+      .catch((err) => console.error("Failed to load store profile", err))
+      .finally(() => setInvoiceNo(`local-${readNextInvoice()}`));
 
     // Initialize upcoming invoice number from localStorage
     setInvoiceNo(`local-${readNextInvoice()}`);
@@ -146,24 +160,47 @@ export default function CheckoutPage() {
     });
   }
 
-  function handleManualAdd() {
+  async function handleManualAdd() {
     if (!customName.trim() || !customPrice) return;
     const priceNum = parseFloat(customPrice);
     if (isNaN(priceNum) || priceNum <= 0) return;
 
-    addToCart({
-      id: `manual-${Date.now()}`,
-      name: customName.trim(),
-      sku: barcodeInput.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-      price: priceNum,
-      qty: customQty > 0 ? customQty : 1,
-    });
+    const sku = barcodeInput.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
+    const qty = customQty > 0 ? customQty : 1;
 
-    setCustomName("");
-    setCustomPrice("");
-    setCustomQty(1);
-    setBarcodeInput("");
-    setNotice("");
+    try {
+      // Reuse the product if this barcode already exists, otherwise save it to this store's inventory.
+      let product = products.find((p) => p.sku?.toLowerCase() === sku.toLowerCase());
+      if (!product) {
+        product = await apiFetch<Product>("/products", {
+          method: "POST",
+          body: JSON.stringify({
+            name: customName.trim(),
+            sku,
+            price: String(priceNum),
+            stockQty: 9999,
+          }),
+        });
+        setProducts((prev) => [...prev, product as Product]);
+      }
+
+      addToCart({
+        id: product.id,
+        name: product.name,
+        sku: product.sku || sku,
+        price: priceNum,
+        qty,
+      });
+
+      setCustomName("");
+      setCustomPrice("");
+      setCustomQty(1);
+      setBarcodeInput("");
+      setNotice(`✔ Saved to inventory and added: ${product.name}`);
+      await loadProducts();
+    } catch (err) {
+      setNotice(`❌ Item was NOT saved: ${err instanceof Error ? err.message : "error"}`);
+    }
   }
 
   function updateQty(sku: string, delta: number) {
@@ -232,8 +269,18 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      
+      await apiFetch("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          items: cart.map((item) => ({
+            productId: item.id,
+            quantity: item.qty,
+            unitPrice: String(item.price),
+          })),
+          discount: discountAmount,
+        }),
+      });
+
       const issuedInvoice = consumeInvoice();
 
       setCompletedOrderData({
@@ -248,8 +295,10 @@ export default function CheckoutPage() {
       setCart([]);
       setDiscount(0);
       setInvoiceNo(`local-${readNextInvoice()}`);
+      await loadProducts();
     } catch (err) {
-      alert("Checkout failed. Please try again.");
+      // The sale was NOT saved: keep the cart and say why.
+      alert(`Sale was not saved: ${err instanceof Error ? err.message : "Checkout failed"}`);
     } finally {
       setLoading(false);
     }
@@ -276,7 +325,7 @@ export default function CheckoutPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Checkout Terminal</h1>
           <p className="text-sm text-slate-600">
-            Imdad Cosmetics — Invoice: <span className="font-mono font-bold text-blue-600">{invoiceNo}</span>
+            {storeInfo.name || "Checkout"} — Invoice: <span className="font-mono font-bold text-blue-600">{invoiceNo}</span>
           </p>
         </div>
         <Button
@@ -483,9 +532,9 @@ export default function CheckoutPage() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 font-mono text-sm">
             <div className="text-center space-y-1 border-b pb-3">
-              <h2 className="font-bold text-lg text-slate-900">Imdad Cosmetics</h2>
-              <p className="text-xs text-slate-600">Shop # B1-A, Kamil Plaza, Basement Bara Bazar, Rawalpindi</p>
-              <p className="text-xs text-slate-600">Ph: 03451523394</p>
+              <h2 className="font-bold text-lg text-slate-900">{storeInfo.name}</h2>
+              {storeInfo.details && <p className="text-xs text-slate-600">{storeInfo.details}</p>}
+              {storeInfo.phone && <p className="text-xs text-slate-600">Ph: {storeInfo.phone}</p>}
             </div>
 
             <div className="flex justify-between text-xs text-slate-500 border-b pb-2">
