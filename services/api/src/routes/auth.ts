@@ -16,7 +16,7 @@ export async function authRoutes(app: FastifyInstance) {
     const payload = request.user;
     if (!payload) return reply.status(401).send({ error: "Unauthorized" });
 
-    if (payload.role === "admin") {
+    if (String(payload.role) === "admin" || String(payload.role) === "super_admin") {
       const rows = await db.select().from(tenants);
       return { data: rows.map(mapTenant) };
     }
