@@ -1,25 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, setToken } from "@pos/api-client";
-import type { AuthResponse, Tenant } from "@pos/types";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select } from "@pos/ui";
+import type { AuthResponse } from "@pos/types";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@pos/ui";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [email, setEmail] = useState("owner@acme.demo");
-  const [password, setPassword] = useState("demo1234");
-  const [tenantSlug, setTenantSlug] = useState("acme-retail");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    apiFetch<{ data: Tenant[] }>("/tenants")
-      .then((res) => setTenants(res.data))
-      .catch(() => {});
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +21,7 @@ export default function LoginPage() {
     try {
       const res = await apiFetch<AuthResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password, tenantSlug }),
+        body: JSON.stringify({ email, password }),
       });
       setToken(res.token);
       router.push("/dashboard");
@@ -49,30 +41,11 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="tenant">Store</Label>
-              <Select
-                id="tenant"
-                value={tenantSlug}
-                onChange={(e) => setTenantSlug(e.target.value)}
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.slug}>
-                    {t.name}
-                  </option>
-                ))}
-                {tenants.length === 0 && (
-                  <>
-                    <option value="acme-retail">Acme Retail</option>
-                    <option value="corner-cafe">Corner Cafe</option>
-                  </>
-                )}
-              </Select>
-            </div>
-            <div>
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -83,6 +56,7 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -93,9 +67,6 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-500">
-            Demo: owner@acme.demo / demo1234
-          </p>
         </CardContent>
       </Card>
     </div>
