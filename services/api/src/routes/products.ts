@@ -111,7 +111,6 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
       }
 
-      // یہاں اب ہارڈ کوڈڈ ویلیو ختم کر کے براہ راست ریکوئسٹ ہیڈر سے x-tenant-id لیا جا رہا ہے
       const tenantId = (request.headers["x-tenant-id"] as string) || "amin-cosmetics";
       const data = parsed.data;
 
@@ -252,7 +251,8 @@ export async function productRoutes(app: FastifyInstance) {
       const result = await runWithTenant(request, reply, async (tx) => {
         const { inventoryMovements } = await import("@pos/database");
 
-        .select()
+        const [product] = await tx
+          .select()
           .from(products)
           .where(eq(products.id, productId))
           .limit(1);
