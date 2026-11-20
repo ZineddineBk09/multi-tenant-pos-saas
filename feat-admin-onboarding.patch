@@ -1,0 +1,478 @@
+From 6e4aa9244ece94353c6e530a1b3fd87625258529 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.local>
+Date: Fri, 20 Nov 2026 04:13:36 +0000
+Subject: [PATCH] Add admin store onboarding endpoint, visiting card storage,
+ change-password
+
+- POST /admin/tenants (x-admin-key = ADMIN_API_KEY): creates store + owner login
+  (random temporary password, bcrypt) + optional visiting card image in one transaction
+- GET /stores/current/card: the logged-in store's own card image (dashboard shows it)
+- POST /auth/change-password
+- tenant_cards table (migration 0002) with RLS
+- Dashboard: visiting card image and change-password cards
+---
+ apps/web/src/app/dashboard/page.tsx           |  98 ++++++++++-
+ .../database/drizzle/0002_tenant_cards.sql    |  11 ++
+ packages/database/drizzle/meta/_journal.json  |   9 +-
+ .../database/migrations/0001_rls_policies.sql |  12 ++
+ packages/database/src/schema/index.ts         |  17 ++
+ services/api/src/index.ts                     |   3 +
+ services/api/src/routes/admin.ts              | 155 ++++++++++++++++++
+ services/api/src/routes/auth.ts               |  39 +++++
+ 8 files changed, 342 insertions(+), 2 deletions(-)
+ create mode 100644 packages/database/drizzle/0002_tenant_cards.sql
+ create mode 100644 services/api/src/routes/admin.ts
+
+diff --git a/apps/web/src/app/dashboard/page.tsx b/apps/web/src/app/dashboard/page.tsx
+index d464818..4718620 100644
+--- a/apps/web/src/app/dashboard/page.tsx
++++ b/apps/web/src/app/dashboard/page.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { useEffect, useState } from "react";
+ import { useRouter } from "next/navigation";
+-import { apiFetch, clearToken, getToken } from "@pos/api-client";
++import { apiFetch, clearToken, getApiUrl, getToken } from "@pos/api-client";
+ import type { Tenant, User } from "@pos/types";
+ import {
+   AppShell,
+@@ -15,6 +15,100 @@ import {
+   PageHeader,
+ } from "@pos/ui";
+ 
++// The shop's own visiting card image, loaded with the login token (an <img> tag cannot send it).
++function VisitingCard() {
++  const [src, setSrc] = useState<string | null>(null);
++
++  useEffect(() => {
++    const token = getToken();
++    if (!token) return;
++    let objectUrl: string | null = null;
++
++    fetch(`${getApiUrl()}/stores/current/card`, { headers: { Authorization: `Bearer ${token}` } })
++      .then((res) => (res.ok ? res.blob() : null))
++      .then((blob) => {
++        if (blob) {
++          objectUrl = URL.createObjectURL(blob);
++          setSrc(objectUrl);
++        }
++      })
++      .catch(() => undefined);
++
++    return () => {
++      if (objectUrl) URL.revokeObjectURL(objectUrl);
++    };
++  }, []);
++
++  if (!src) return null;
++  return (
++    <Card>
++      <CardHeader>
++        <CardTitle>Visiting Card</CardTitle>
++        <CardDescription>The card this store was registered from.</CardDescription>
++      </CardHeader>
++      <CardContent>
++        {/* eslint-disable-next-line @next/next/no-img-element */}
++        <img src={src} alt="Store visiting card" className="max-h-64 w-auto rounded-md border" />
++      </CardContent>
++    </Card>
++  );
++}
++
++// Lets the owner replace the temporary password they were given at registration.
++function ChangePassword() {
++  const [current, setCurrent] = useState("");
++  const [next, setNext] = useState("");
++  const [message, setMessage] = useState("");
++  const [saving, setSaving] = useState(false);
++
++  async function submit() {
++    setSaving(true);
++    setMessage("");
++    try {
++      await apiFetch("/auth/change-password", {
++        method: "POST",
++        body: JSON.stringify({ currentPassword: current, newPassword: next }),
++      });
++      setCurrent("");
++      setNext("");
++      setMessage("✔ Password changed.");
++    } catch (err) {
++      setMessage(`❌ ${err instanceof Error ? err.message : "Could not change password"}`);
++    } finally {
++      setSaving(false);
++    }
++  }
++
++  return (
++    <Card>
++      <CardHeader>
++        <CardTitle>Change password</CardTitle>
++        <CardDescription>Replace the temporary password with your own (min. 8 characters).</CardDescription>
++      </CardHeader>
++      <CardContent className="space-y-3">
++        <input
++          type="password"
++          placeholder="Current password"
++          value={current}
++          onChange={(e) => setCurrent(e.target.value)}
++          className="w-full rounded-md border px-3 py-2 text-sm"
++        />
++        <input
++          type="password"
++          placeholder="New password"
++          value={next}
++          onChange={(e) => setNext(e.target.value)}
++          className="w-full rounded-md border px-3 py-2 text-sm"
++        />
++        <Button onClick={submit} disabled={saving || !current || next.length < 8}>
++          {saving ? "Saving..." : "Change password"}
++        </Button>
++        {message && <p className="text-sm text-slate-700">{message}</p>}
++      </CardContent>
++    </Card>
++  );
++}
++
+ export default function DashboardPage() {
+   const router = useRouter();
+   const [user, setUser] = useState<User | null>(null);
+@@ -94,6 +188,8 @@ export default function DashboardPage() {
+             </CardContent>
+           </Card>
+         </a>
++        <VisitingCard />
++        <ChangePassword />
+       </div>
+     </AppShell>
+   );
+diff --git a/packages/database/drizzle/0002_tenant_cards.sql b/packages/database/drizzle/0002_tenant_cards.sql
+new file mode 100644
+index 0000000..73af836
+--- /dev/null
++++ b/packages/database/drizzle/0002_tenant_cards.sql
+@@ -0,0 +1,11 @@
++CREATE TABLE IF NOT EXISTS "tenant_cards" (
++	"tenant_id" uuid PRIMARY KEY NOT NULL,
++	"mime_type" text NOT NULL,
++	"image" bytea NOT NULL,
++	"created_at" timestamp with time zone DEFAULT now() NOT NULL
++);--> statement-breakpoint
++DO $$ BEGIN
++ ALTER TABLE "tenant_cards" ADD CONSTRAINT "tenant_cards_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;
++EXCEPTION
++ WHEN duplicate_object THEN null;
++END $$;
+diff --git a/packages/database/drizzle/meta/_journal.json b/packages/database/drizzle/meta/_journal.json
+index 92e0db3..ad674f4 100644
+--- a/packages/database/drizzle/meta/_journal.json
++++ b/packages/database/drizzle/meta/_journal.json
+@@ -15,6 +15,13 @@
+       "when": 1780740150496,
+       "tag": "0001_tenant_profile",
+       "breakpoints": true
++    },
++    {
++      "idx": 2,
++      "version": "7",
++      "when": 1780900000000,
++      "tag": "0002_tenant_cards",
++      "breakpoints": true
+     }
+   ]
+-}
+\ No newline at end of file
++}
+diff --git a/packages/database/migrations/0001_rls_policies.sql b/packages/database/migrations/0001_rls_policies.sql
+index 96c4d6c..0719941 100644
+--- a/packages/database/migrations/0001_rls_policies.sql
++++ b/packages/database/migrations/0001_rls_policies.sql
+@@ -78,3 +78,15 @@ CREATE POLICY inventory_movements_delete ON inventory_movements FOR DELETE
+ CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_email_idx ON users (tenant_id, email);
+ CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_sku_idx ON products (tenant_id, sku);
+ CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_idx ON categories (tenant_id, name);
++
++-- Tenant visiting cards
++ALTER TABLE tenant_cards ENABLE ROW LEVEL SECURITY;
++ALTER TABLE tenant_cards FORCE ROW LEVEL SECURITY;
++CREATE POLICY tenant_cards_select ON tenant_cards FOR SELECT
++  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
++CREATE POLICY tenant_cards_insert ON tenant_cards FOR INSERT
++  WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
++CREATE POLICY tenant_cards_update ON tenant_cards FOR UPDATE
++  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
++CREATE POLICY tenant_cards_delete ON tenant_cards FOR DELETE
++  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+diff --git a/packages/database/src/schema/index.ts b/packages/database/src/schema/index.ts
+index a55c5d5..9eb2298 100644
+--- a/packages/database/src/schema/index.ts
++++ b/packages/database/src/schema/index.ts
+@@ -1,5 +1,6 @@
+ import { relations } from "drizzle-orm";
+ import {
++  customType,
+   integer,
+   numeric,
+   pgEnum,
+@@ -9,6 +10,12 @@ import {
+   uuid,
+ } from "drizzle-orm/pg-core";
+ 
++const bytea = customType<{ data: Buffer; driverData: Buffer }>({
++  dataType() {
++    return "bytea";
++  },
++});
++
+ export const userRoleEnum = pgEnum("user_role", ["owner", "manager", "cashier"]);
+ export const orderStatusEnum = pgEnum("order_status", [
+   "pending",
+@@ -26,6 +33,16 @@ export const tenants = pgTable("tenants", {
+   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+ });
+ 
++// The visiting card image the shop was registered from (one per store).
++export const tenantCards = pgTable("tenant_cards", {
++  tenantId: uuid("tenant_id")
++    .primaryKey()
++    .references(() => tenants.id, { onDelete: "cascade" }),
++  mimeType: text("mime_type").notNull(),
++  image: bytea("image").notNull(),
++  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++});
++
+ export const users = pgTable("users", {
+   id: uuid("id").defaultRandom().primaryKey(),
+   tenantId: uuid("tenant_id")
+diff --git a/services/api/src/index.ts b/services/api/src/index.ts
+index ba0589d..b78bf2f 100644
+--- a/services/api/src/index.ts
++++ b/services/api/src/index.ts
+@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
+ import Fastify from "fastify";
+ import { ZodError } from "zod";
+ import { authenticate } from "./lib/auth.js";
++import { adminRoutes, storeCardRoutes } from "./routes/admin.js";
+ import { authRoutes } from "./routes/auth.js";
+ import { orderRoutes } from "./routes/orders.js";
+ import { productRoutes } from "./routes/products.js";
+@@ -55,6 +56,8 @@ async function buildApp() {
+   app.get("/health", async () => ({ status: "ok" }));
+ 
+   await app.register(authRoutes);
++  await app.register(adminRoutes);
++  await app.register(storeCardRoutes);
+   await app.register(productRoutes);
+   await app.register(orderRoutes);
+ 
+diff --git a/services/api/src/routes/admin.ts b/services/api/src/routes/admin.ts
+new file mode 100644
+index 0000000..772150d
+--- /dev/null
++++ b/services/api/src/routes/admin.ts
+@@ -0,0 +1,155 @@
++import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
++import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
++import bcrypt from "bcryptjs";
++import { eq, tenantCards, tenants, users, withTenantContext } from "@pos/database";
++import { z } from "zod";
++import { runWithTenant } from "../middleware/tenant-context.js";
++
++const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
++const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
++
++const slugify = (value: string) =>
++  value
++    .toLowerCase()
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "")
++    .slice(0, 40)
++    .replace(/-+$/g, "");
++
++const createTenantSchema = z.object({
++  name: z.string().trim().min(1).max(120),
++  slug: z.string().trim().optional(),
++  address: z.string().trim().max(300).optional(),
++  phone: z.string().trim().max(80).optional(),
++  ownerName: z.string().trim().min(1).max(120).optional(),
++  ownerEmail: z.string().trim().toLowerCase().email().optional(),
++  cardImageBase64: z.string().optional(),
++  cardImageMime: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
++});
++
++function sha256(value: string): Buffer {
++  return createHash("sha256").update(value).digest();
++}
++
++/**
++ * Admin-only access. The key lives in the ADMIN_API_KEY environment variable
++ * (at least 24 characters). If it is not set, these endpoints are disabled.
++ */
++async function requireAdminKey(request: FastifyRequest, reply: FastifyReply) {
++  const configured = process.env.ADMIN_API_KEY ?? "";
++  if (configured.length < 24) {
++    return reply.status(503).send({ error: "Admin API is not configured" });
++  }
++  const provided = String(request.headers["x-admin-key"] ?? "");
++  const ok = timingSafeEqual(sha256(provided), sha256(configured));
++  if (!ok) return reply.status(401).send({ error: "Unauthorized" });
++}
++
++export async function adminRoutes(app: FastifyInstance) {
++  app.addHook("onSend", async (_req, reply) => {
++    reply.header("Cache-Control", "no-store");
++  });
++
++  // Register a new shop: store + owner login + (optional) visiting card image, in one transaction.
++  app.post(
++    "/admin/tenants",
++    { preHandler: [requireAdminKey], bodyLimit: 9 * 1024 * 1024 },
++    async (request, reply) => {
++      const parsed = createTenantSchema.safeParse(request.body);
++      if (!parsed.success) {
++        return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
++      }
++      const data = parsed.data;
++
++      const slug = slugify(data.slug || data.name);
++      if (!slug || !SLUG_RE.test(slug)) {
++        return reply.status(400).send({ error: "Could not build a valid store ID from the name" });
++      }
++
++      let image: Buffer | null = null;
++      if (data.cardImageBase64) {
++        if (!data.cardImageMime) {
++          return reply.status(400).send({ error: "cardImageMime is required with cardImageBase64" });
++        }
++        image = Buffer.from(data.cardImageBase64, "base64");
++        if (image.length === 0 || image.length > MAX_IMAGE_BYTES) {
++          return reply.status(400).send({ error: "Card image is empty or larger than 6 MB" });
++        }
++      }
++
++      const tenantId = randomUUID();
++      const temporaryPassword = randomBytes(9).toString("base64url"); // 12 characters
++      const passwordHash = await bcrypt.hash(temporaryPassword, 10);
++      const loginEmail = data.ownerEmail ?? `owner@${slug}.pos`;
++
++      const created = await withTenantContext(tenantId, async (tx) => {
++        const [tenant] = await tx
++          .insert(tenants)
++          .values({
++            id: tenantId,
++            slug,
++            name: data.name,
++            address: data.address || null,
++            phone: data.phone || null,
++          })
++          .onConflictDoNothing({ target: tenants.slug })
++          .returning();
++
++        if (!tenant) return null; // this store ID already exists
++
++        await tx.insert(users).values({
++          tenantId,
++          email: loginEmail,
++          passwordHash,
++          name: data.ownerName ?? `${data.name} Owner`,
++          role: "owner",
++        });
++
++        if (image && data.cardImageMime) {
++          await tx.insert(tenantCards).values({
++            tenantId,
++            mimeType: data.cardImageMime,
++            image,
++          });
++        }
++        return tenant;
++      });
++
++      if (!created) {
++        return reply.status(409).send({ error: `A store with the ID "${slug}" already exists` });
++      }
++
++      return reply.status(201).send({
++        tenantId: created.id,
++        slug: created.slug,
++        name: created.name,
++        loginEmail,
++        temporaryPassword,
++        hasCardImage: Boolean(image),
++      });
++    },
++  );
++}
++
++// The logged-in store's own visiting card image (used by the dashboard).
++export async function storeCardRoutes(app: FastifyInstance) {
++  app.addHook("preHandler", app.authenticate);
++
++  app.get("/stores/current/card", async (request, reply) => {
++    const row = await runWithTenant(request, async (tx, tenantId) => {
++      const [card] = await tx
++        .select()
++        .from(tenantCards)
++        .where(eq(tenantCards.tenantId, tenantId))
++        .limit(1);
++      return card ?? null;
++    });
++
++    if (!row) return reply.status(404).send({ error: "No visiting card on file" });
++
++    return reply
++      .header("Content-Type", row.mimeType)
++      .header("Cache-Control", "private, no-store")
++      .send(row.image);
++  });
++}
+diff --git a/services/api/src/routes/auth.ts b/services/api/src/routes/auth.ts
+index bf3d17e..c431f12 100644
+--- a/services/api/src/routes/auth.ts
++++ b/services/api/src/routes/auth.ts
+@@ -146,4 +146,43 @@ export async function authRoutes(app: FastifyInstance) {
+       phone: tenant.phone ?? "",
+     };
+   });
++
++  // Lets a user replace the temporary password they were given at registration.
++  app.post("/auth/change-password", { preHandler: [app.authenticate] }, async (request, reply) => {
++    const payload = request.user;
++    if (!payload) return reply.status(401).send({ error: "Unauthorized" });
++
++    const parsed = z
++      .object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(100) })
++      .safeParse(request.body);
++    if (!parsed.success) {
++      return reply.status(400).send({ error: "New password must be at least 8 characters" });
++    }
++
++    const outcome = await withTenantContext(payload.tenantId, async (tx) => {
++      const [user] = await tx
++        .select()
++        .from(users)
++        .where(and(eq(users.id, payload.userId), eq(users.tenantId, payload.tenantId)))
++        .limit(1);
++      if (!user) return "unauthorized" as const;
++
++      const valid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
++      if (!valid) return "wrong-password" as const;
++
++      const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
++      await tx
++        .update(users)
++        .set({ passwordHash })
++        .where(and(eq(users.id, user.id), eq(users.tenantId, user.tenantId)));
++      return "ok" as const;
++    });
++
++    if (outcome === "unauthorized") return reply.status(401).send({ error: "Unauthorized" });
++    if (outcome === "wrong-password") {
++      return reply.status(400).send({ error: "Current password is incorrect" });
++    }
++
++    return { success: true };
++  });
+ }
+-- 
+2.43.0

@@ -146,4 +146,43 @@ export async function authRoutes(app: FastifyInstance) {
       phone: tenant.phone ?? "",
     };
   });
+
+  // Lets a user replace the temporary password they were given at registration.
+  app.post("/auth/change-password", { preHandler: [app.authenticate] }, async (request, reply) => {
+    const payload = request.user;
+    if (!payload) return reply.status(401).send({ error: "Unauthorized" });
+
+    const parsed = z
+      .object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(100) })
+      .safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "New password must be at least 8 characters" });
+    }
+
+    const outcome = await withTenantContext(payload.tenantId, async (tx) => {
+      const [user] = await tx
+        .select()
+        .from(users)
+        .where(and(eq(users.id, payload.userId), eq(users.tenantId, payload.tenantId)))
+        .limit(1);
+      if (!user) return "unauthorized" as const;
+
+      const valid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
+      if (!valid) return "wrong-password" as const;
+
+      const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
+      await tx
+        .update(users)
+        .set({ passwordHash })
+        .where(and(eq(users.id, user.id), eq(users.tenantId, user.tenantId)));
+      return "ok" as const;
+    });
+
+    if (outcome === "unauthorized") return reply.status(401).send({ error: "Unauthorized" });
+    if (outcome === "wrong-password") {
+      return reply.status(400).send({ error: "Current password is incorrect" });
+    }
+
+    return { success: true };
+  });
 }

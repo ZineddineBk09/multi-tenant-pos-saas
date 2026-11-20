@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { authenticate } from "./lib/auth.js";
+import { adminRoutes, storeCardRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { orderRoutes } from "./routes/orders.js";
 import { productRoutes } from "./routes/products.js";
@@ -55,6 +56,8 @@ async function buildApp() {
   app.get("/health", async () => ({ status: "ok" }));
 
   await app.register(authRoutes);
+  await app.register(adminRoutes);
+  await app.register(storeCardRoutes);
   await app.register(productRoutes);
   await app.register(orderRoutes);
 
