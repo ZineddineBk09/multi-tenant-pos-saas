@@ -78,3 +78,15 @@ CREATE POLICY inventory_movements_delete ON inventory_movements FOR DELETE
 CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_email_idx ON users (tenant_id, email);
 CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_sku_idx ON products (tenant_id, sku);
 CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_idx ON categories (tenant_id, name);
+
+-- Tenant visiting cards
+ALTER TABLE tenant_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_cards FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_cards_select ON tenant_cards FOR SELECT
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+CREATE POLICY tenant_cards_insert ON tenant_cards FOR INSERT
+  WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+CREATE POLICY tenant_cards_update ON tenant_cards FOR UPDATE
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+CREATE POLICY tenant_cards_delete ON tenant_cards FOR DELETE
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);

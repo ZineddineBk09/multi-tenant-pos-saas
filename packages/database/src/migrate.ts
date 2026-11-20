@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { client, db } from "./client";
+import { client, db } from "./client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -16,10 +16,19 @@ async function main() {
     "utf-8",
   );
 
+  // Strip comment lines from each chunk. (Previously a chunk starting with "-- Section"
+  // was dropped entirely, which silently skipped the first policy of every section,
+  // e.g. products_select, so reads and INSERT ... RETURNING were blocked by RLS.)
   const statements = rlsSql
     .split(";")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("--"));
+    .map((chunk) =>
+      chunk
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join("\n")
+        .trim(),
+    )
+    .filter((s) => s.length > 0);
 
   for (const statement of statements) {
     try {

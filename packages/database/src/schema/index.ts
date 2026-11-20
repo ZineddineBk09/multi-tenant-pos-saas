@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  customType,
   integer,
   numeric,
   pgEnum,
@@ -8,6 +9,12 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const userRoleEnum = pgEnum("user_role", ["owner", "manager", "cashier"]);
 export const orderStatusEnum = pgEnum("order_status", [
@@ -21,6 +28,18 @@ export const tenants = pgTable("tenants", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   plan: text("plan").notNull().default("starter"),
+  address: text("address"),
+  phone: text("phone"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The visiting card image the shop was registered from (one per store).
+export const tenantCards = pgTable("tenant_cards", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  mimeType: text("mime_type").notNull(),
+  image: bytea("image").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -8,6 +8,20 @@
       "when": 1780740150495,
       "tag": "0000_fat_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780740150496,
+      "tag": "0001_tenant_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780900000000,
+      "tag": "0002_tenant_cards",
+      "breakpoints": true
     }
   ]
 }

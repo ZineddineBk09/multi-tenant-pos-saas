@@ -1,6 +1,8 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
+import { ZodError } from "zod";
 import { authenticate } from "./lib/auth.js";
+import { adminRoutes, storeCardRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { orderRoutes } from "./routes/orders.js";
 import { productRoutes } from "./routes/products.js";
@@ -29,9 +31,33 @@ async function buildApp() {
     credentials: true,
   });
 
+  // 👇 یہ نیا ایرر ہینڈلر شامل کیا گیا ہے تاکہ 500 انٹرنل سرور ایرر کی اصل وجہ اور Zod ویلیڈیشن کا پتہ چل سکے
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ error: "Invalid input", issues: err.flatten() });
+    }
+    req.log.error({ err }, "unhandled error");
+    const code = (err as any).code; // Postgres error code
+    const status = (err as any).statusCode;
+    if (status === 401) return reply.status(401).send({ error: "Unauthorized" });
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      return reply.status(status).send({ error: (err as Error).message });
+    }
+    if (code === "22P02") return reply.status(400).send({ error: "Invalid id" });
+    if (code === "23503") return reply.status(400).send({ error: "Referenced record not found" });
+    if (code === "23505") return reply.status(409).send({ error: "SKU already exists" });
+    if (code === "23502") return reply.status(400).send({ error: "Missing required field" });
+    if (code === "42703" || code === "42P01") {
+      return reply.status(500).send({ error: "Database schema out of date" });
+    }
+    return reply.status(500).send({ error: "Internal server error" });
+  });
+
   app.get("/health", async () => ({ status: "ok" }));
 
   await app.register(authRoutes);
+  await app.register(adminRoutes);
+  await app.register(storeCardRoutes);
   await app.register(productRoutes);
   await app.register(orderRoutes);
 

@@ -19,6 +19,8 @@ export function mapTenant(row: DbTenant): Tenant {
     slug: row.slug,
     name: row.name,
     plan: row.plan,
+    address: row.address ?? null,
+    phone: row.phone ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }

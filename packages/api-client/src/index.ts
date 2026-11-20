@@ -35,8 +35,11 @@ export async function apiFetch<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const token = getToken();
+
+  // The store (tenant) is identified ONLY by the login token on the server.
+  // Never send a client-chosen tenant header.
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -48,6 +51,12 @@ export async function apiFetch<T>(
     ...options,
     headers,
   });
+
+  if (response.status === 401 && path !== "/auth/login" && typeof window !== "undefined") {
+    // Stale or invalid login: drop it so no page keeps showing another store's context.
+    clearToken();
+    window.location.href = "/login";
+  }
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiError;
